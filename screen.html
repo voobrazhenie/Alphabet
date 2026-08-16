@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screen</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #000; overflow: hidden; }
+  body { display: grid; place-items: center; }
+
+  .sizer {
+    width: 60vmin;
+    height: 60vmin;
+    display: grid;
+    place-items: center;
+    transform: scale(0.1);
+    transition: transform 60ms linear;
+    will-change: transform;
+  }
+
+  .circle {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: #fff;
+  }
+
+  .circle.pulse { animation: pulse 180ms ease-out; }
+
+  @keyframes pulse {
+    0%   { transform: scale(1);    filter: brightness(1); }
+    30%  { transform: scale(1.45); filter: brightness(2); }
+    100% { transform: scale(1);    filter: brightness(1); }
+  }
+
+  .status {
+    position: fixed;
+    top: 12px;
+    left: 14px;
+    font: 12px ui-monospace, monospace;
+    color: #666;
+    letter-spacing: .04em;
+  }
+</style>
+</head>
+<body>
+  <div class="sizer" id="sizer"><div class="circle" id="circle"></div></div>
+  <div class="status" id="status">connecting…</div>
+
+<script>
+  const sizer = document.getElementById('sizer');
+  const circle = document.getElementById('circle');
+  const status = document.getElementById('status');
+
+  const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws';
+
+  let socket;
+  let reconnectDelay = 500;
+
+  function setSize(value) {
+    // 0 → tiny dot, 1 → fills most of the screen
+    sizer.style.transform = 'scale(' + (0.1 + value * 0.9).toFixed(4) + ')';
+  }
+
+  function pulse() {
+    circle.classList.remove('pulse');
+    void circle.offsetWidth; // restart the animation even if one is running
+    circle.classList.add('pulse');
+  }
+
+  function connect() {
+    socket = new WebSocket(WS_URL);
+
+    socket.addEventListener('open', () => {
+      reconnectDelay = 500;
+      status.textContent = 'connected';
+      socket.send(JSON.stringify({ type: 'hello', role: 'screen' }));
+    });
+
+    socket.addEventListener('message', (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+
+      if (msg.type === 'pulse') pulse();
+      else if (msg.type === 'slider') setSize(msg.value);
+      else if (msg.type === 'peers') {
+        status.textContent = 'connected · controllers: ' + msg.controllers + ' · server ' + msg.instance;
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      status.textContent = 'disconnected — reconnecting…';
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    });
+
+    socket.addEventListener('error', () => socket.close());
+  }
+
+  setSize(0.3);
+  connect();
+</script>
+</body>
+</html>

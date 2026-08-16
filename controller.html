@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Controller</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #111;
+    color: #eee;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 24px calc(24px + env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    letter-spacing: .02em;
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #d33; }
+  .status.online .dot { background: #3d8; }
+  .meta { margin-left: auto; font: 12px ui-monospace, monospace; color: #777; }
+
+  #pulse {
+    flex: 1;
+    min-height: 45vh;
+    border: none;
+    border-radius: 24px;
+    background: #fff;
+    color: #111;
+    font-size: clamp(2rem, 12vw, 4rem);
+    font-weight: 800;
+    letter-spacing: .08em;
+    transition: transform 80ms ease-out, background-color 80ms ease-out;
+  }
+  #pulse:active { transform: scale(.97); background: #ffd84d; }
+  #pulse:disabled { opacity: .35; }
+
+  .slider-row label { display: block; font-size: 14px; color: #999; margin-bottom: 12px; }
+  .slider-row output { color: #fff; font: 14px ui-monospace, monospace; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 56px;
+    background: transparent;
+  }
+  input[type=range]::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; background: #333; }
+  input[type=range]::-moz-range-track { height: 14px; border-radius: 7px; background: #333; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 48px; height: 48px;
+    margin-top: -17px;
+    border-radius: 50%;
+    background: #fff;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 48px; height: 48px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+  }
+</style>
+</head>
+<body>
+  <div class="status" id="status">
+    <span class="dot"></span><span id="statusText">Disconnected</span>
+    <span class="meta" id="meta"></span>
+  </div>
+
+  <button id="pulse" disabled>PULSE</button>
+
+  <div class="slider-row">
+    <label for="slider">Size <output id="value">0.30</output></label>
+    <input type="range" id="slider" min="0" max="1" step="0.001" value="0.3">
+  </div>
+
+<script>
+  const statusEl = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
+  const meta = document.getElementById('meta');
+  const pulseBtn = document.getElementById('pulse');
+  const slider = document.getElementById('slider');
+  const valueOut = document.getElementById('value');
+
+  const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws';
+  const THROTTLE_MS = 40;
+
+  let socket;
+  let reconnectDelay = 500;
+  let lastSent = 0;
+  let pending = null;
+  let pendingTimer = null;
+
+  function send(msg) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(msg));
+      return true;
+    }
+    return false;
+  }
+
+  function sendSlider(value) {
+    const now = performance.now();
+    const wait = THROTTLE_MS - (now - lastSent);
+
+    if (wait <= 0) {
+      lastSent = now;
+      pending = null;
+      send({ type: 'slider', value });
+      return;
+    }
+
+    // keep the latest value and flush it once the throttle window closes
+    pending = value;
+    if (pendingTimer === null) {
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        if (pending === null) return;
+        lastSent = performance.now();
+        send({ type: 'slider', value: pending });
+        pending = null;
+      }, wait);
+    }
+  }
+
+  function connect() {
+    socket = new WebSocket(WS_URL);
+
+    socket.addEventListener('open', () => {
+      reconnectDelay = 500;
+      statusEl.classList.add('online');
+      statusText.textContent = 'Connected';
+      pulseBtn.disabled = false;
+      send({ type: 'hello', role: 'controller' });
+      send({ type: 'slider', value: Number(slider.value) });
+    });
+
+    socket.addEventListener('message', (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      if (msg.type === 'peers') {
+        meta.textContent = 'screens: ' + msg.screens + ' · server ' + msg.instance;
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      statusEl.classList.remove('online');
+      statusText.textContent = 'Disconnected';
+      meta.textContent = '';
+      pulseBtn.disabled = true;
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    });
+
+    socket.addEventListener('error', () => socket.close());
+  }
+
+  // pointerdown fires before click, so the screen reacts the moment you touch
+  pulseBtn.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    send({ type: 'pulse' });
+  });
+
+  slider.addEventListener('input', () => {
+    const value = Number(slider.value);
+    valueOut.textContent = value.toFixed(2);
+    sendSlider(value);
+  });
+
+  valueOut.textContent = Number(slider.value).toFixed(2);
+  connect();
+</script>
+</body>
+</html>

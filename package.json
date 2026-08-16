@@ -1,0 +1,11 @@
+{
+  "name": "alphabet-realtime-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
