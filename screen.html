@@ -67,6 +67,9 @@
   input[type=range] { width: 220px; accent-color: #f2f2f2; }
   output { font: 600 .95rem ui-monospace, monospace; color: #f2f2f2; min-width: 4.5em; }
   .status { font: 12px ui-monospace, monospace; color: #666; letter-spacing: .04em; }
+  .octave { display: flex; align-items: center; gap: .6rem; font-size: .95rem; color: #aaa; }
+  .octave button { padding: .55rem .95rem; font-size: 1.15rem; line-height: 1; }
+  .octave output { min-width: 2.2em; text-align: center; }
 </style>
 </head>
 <body>
@@ -76,9 +79,15 @@
     <button id="play">PLAY</button>
     <button id="pause">PAUSE</button>
     <label>Tempo <input type="range" id="tempo" min="40" max="240" step="1" value="120"><output id="bpm">120 BPM</output></label>
+    <div class="octave">
+      <span>Octave</span>
+      <button id="octDown" aria-label="Octave down">–</button>
+      <output id="octValue">0</output>
+      <button id="octUp" aria-label="Octave up">+</button>
+    </div>
   </div>
 
-  <div class="status" id="status">connecting…</div>
+  <div class="status"><span id="status">connecting…</span> · <span id="worker">worker —</span></div>
 
 <script src="/letters.js"></script>
 <script>
@@ -89,8 +98,15 @@
   const pauseBtn = document.getElementById('pause');
   const tempoInput = document.getElementById('tempo');
   const bpmOut = document.getElementById('bpm');
+  const octDown = document.getElementById('octDown');
+  const octUp = document.getElementById('octUp');
+  const octValue = document.getElementById('octValue');
+  const workerEl = document.getElementById('worker');
 
   // ---- shared state (from the server) --------------------------------------
+  let octave = 0;               // display-side transpose, whole octaves
+  const OCTAVE_MIN = -2;
+  const OCTAVE_MAX = 3;
   let cells = Array.from({ length: CELL_COUNT }, (_, i) => ({ index: i, letter: '-', owner: null }));
   const nodes = [];
 
@@ -105,7 +121,7 @@
   function render() {
     cells.forEach((cell, i) => {
       nodes[i].letter.textContent = cell.letter;
-      nodes[i].note.textContent = letterToNoteName(cell.letter);
+      nodes[i].note.textContent = letterToNoteName(cell.letter, octave);
       nodes[i].el.classList.toggle('taken', cell.owner !== null);
     });
   }
@@ -128,7 +144,7 @@
   }
 
   function playNote(letter, time) {
-    const freq = letterToFreq(letter);
+    const freq = letterToFreq(letter, octave);
     if (freq === null) return;
     const osc = audio.createOscillator();
     const gain = audio.createGain();
@@ -194,6 +210,22 @@
     bpmOut.textContent = bpm + ' BPM';
   });
 
+  // Octave is display-only: it never touches the socket.
+  function setOctave(next) {
+    octave = Math.min(OCTAVE_MAX, Math.max(OCTAVE_MIN, next));
+    octValue.textContent = (octave > 0 ? '+' : '') + octave;
+    octDown.disabled = octave === OCTAVE_MIN;
+    octUp.disabled = octave === OCTAVE_MAX;
+    render();
+  }
+  octDown.addEventListener('click', () => setOctave(octave - 1));
+  octUp.addEventListener('click', () => setOctave(octave + 1));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowUp') setOctave(octave + 1);
+    else if (event.key === 'ArrowDown') setOctave(octave - 1);
+  });
+  setOctave(0);
+
   // ---- socket: receives letters, sends nothing but hello -------------------
   const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws';
   let socket;
@@ -213,11 +245,13 @@
       if (msg.type !== 'state' && msg.type !== 'state:init') return;
       cells = msg.cells;
       render();
-      status.textContent = 'connected · controllers: ' + msg.controllers + ' · server ' + msg.instance;
+      status.textContent = 'connected · controllers: ' + msg.controllers;
+      workerEl.textContent = 'worker ' + msg.instance;
     });
 
     socket.addEventListener('close', () => {
       status.textContent = 'disconnected — reconnecting…';
+      workerEl.textContent = 'worker —';
       setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 10000);
     });

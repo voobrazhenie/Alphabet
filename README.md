@@ -16,7 +16,7 @@ no database, no accounts.
 | `lib/hub.js` | Backend. Authoritative grid: 8 cells, their letters, and who owns each. Validation, locking, broadcasting |
 | `api/ws.js` | Vercel Function entrypoint — the hub as a WebSocket endpoint at `/api/ws` |
 | `server.js` | Local dev server: static files + the same hub |
-| `screen.html` | Display. Grid rendering, sequencer clock, play/pause, tempo, audio |
+| `screen.html` | Display. Grid rendering, sequencer clock, play/pause, tempo, octave, audio |
 | `controller.html` | Phone. Claim/release a cell, pick a letter, see ownership |
 | `letters.js` | Letter → note mapping, isolated so it can be swapped |
 
@@ -58,6 +58,11 @@ never touch the socket: the clock runs entirely in the display page.
 
 `letters.js`. Chromatic from C3: A = C3, B = C#3, C = D3 … Z = 25 semitones above C3
 (`BASE_MIDI = 48`). Change that file to retune the piece — nothing else depends on the mapping.
+
+The display has an octave switch (– / + buttons, or the arrow up/down keys) covering -2 to +3
+octaves, shown next to the tempo. It transposes playback and the note labels only; like tempo and
+play/pause it is display-local and never crosses the socket. The status line also names the
+server worker the page is connected to.
 
 The brief specified A = C1; that lands around 33 Hz, inaudible on laptop and phone speakers, so
 the base was moved up two octaves.
