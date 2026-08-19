@@ -3,89 +3,217 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Screen</title>
+<title>Sequencer — display</title>
 <style>
-  html, body { height: 100%; margin: 0; background: #000; overflow: hidden; }
-  body { display: grid; place-items: center; }
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0a0a0a;
+    color: #f2f2f2;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 4vh;
+    align-items: center;
+    justify-content: center;
+    padding: 4vh 3vw;
+  }
 
-  .sizer {
-    width: 60vmin;
-    height: 60vmin;
+  .grid {
     display: grid;
-    place-items: center;
-    transform: scale(0.1);
-    transition: transform 60ms linear;
-    will-change: transform;
-  }
-
-  .circle {
+    grid-template-columns: repeat(8, 1fr);
+    gap: 1.2vw;
     width: 100%;
-    height: 100%;
-    border-radius: 50%;
+  }
+
+  .cell {
+    aspect-ratio: 3 / 4;
+    border: 3px solid #333;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .4em;
+    background: #131313;
+    transition: transform 70ms ease-out, background-color 70ms ease-out, border-color 70ms ease-out;
+  }
+  .cell .letter { font-size: clamp(2rem, 7vw, 6rem); font-weight: 800; line-height: 1; }
+  .cell .note { font: 500 clamp(.7rem, 1.2vw, 1rem) ui-monospace, monospace; color: #777; }
+  .cell .step { font: 500 clamp(.6rem, 1vw, .85rem) ui-monospace, monospace; color: #555; }
+  .cell.taken { border-color: #4a4a4a; }
+  .cell.active {
     background: #fff;
+    border-color: #fff;
+    transform: scale(1.06);
   }
+  .cell.active .letter { color: #000; }
+  .cell.active .note, .cell.active .step { color: #444; }
 
-  .circle.pulse { animation: pulse 180ms ease-out; }
-
-  @keyframes pulse {
-    0%   { transform: scale(1);    filter: brightness(1); }
-    30%  { transform: scale(1.45); filter: brightness(2); }
-    100% { transform: scale(1);    filter: brightness(1); }
+  .transport { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; justify-content: center; }
+  button {
+    font: 700 1rem/1 ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: .06em;
+    padding: .9rem 1.6rem;
+    border-radius: 10px;
+    border: 2px solid #f2f2f2;
+    background: transparent;
+    color: #f2f2f2;
+    cursor: pointer;
   }
-
-  .status {
-    position: fixed;
-    top: 12px;
-    left: 14px;
-    font: 12px ui-monospace, monospace;
-    color: #666;
-    letter-spacing: .04em;
-  }
+  button.on { background: #f2f2f2; color: #0a0a0a; }
+  label { display: flex; align-items: center; gap: .7rem; font-size: .95rem; color: #aaa; }
+  input[type=range] { width: 220px; accent-color: #f2f2f2; }
+  output { font: 600 .95rem ui-monospace, monospace; color: #f2f2f2; min-width: 4.5em; }
+  .status { font: 12px ui-monospace, monospace; color: #666; letter-spacing: .04em; }
 </style>
 </head>
 <body>
-  <div class="sizer" id="sizer"><div class="circle" id="circle"></div></div>
+  <div class="grid" id="grid"></div>
+
+  <div class="transport">
+    <button id="play">PLAY</button>
+    <button id="pause">PAUSE</button>
+    <label>Tempo <input type="range" id="tempo" min="40" max="240" step="1" value="120"><output id="bpm">120 BPM</output></label>
+  </div>
+
   <div class="status" id="status">connecting…</div>
 
+<script src="/letters.js"></script>
 <script>
-  const sizer = document.getElementById('sizer');
-  const circle = document.getElementById('circle');
+  const CELL_COUNT = 8;
+  const grid = document.getElementById('grid');
   const status = document.getElementById('status');
+  const playBtn = document.getElementById('play');
+  const pauseBtn = document.getElementById('pause');
+  const tempoInput = document.getElementById('tempo');
+  const bpmOut = document.getElementById('bpm');
 
+  // ---- shared state (from the server) --------------------------------------
+  let cells = Array.from({ length: CELL_COUNT }, (_, i) => ({ index: i, letter: '-', owner: null }));
+  const nodes = [];
+
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.innerHTML = '<div class="letter">-</div><div class="note"></div><div class="step">' + (i + 1) + '</div>';
+    grid.appendChild(el);
+    nodes.push({ el, letter: el.querySelector('.letter'), note: el.querySelector('.note') });
+  }
+
+  function render() {
+    cells.forEach((cell, i) => {
+      nodes[i].letter.textContent = cell.letter;
+      nodes[i].note.textContent = letterToNoteName(cell.letter);
+      nodes[i].el.classList.toggle('taken', cell.owner !== null);
+    });
+  }
+  render();
+
+  // ---- sequencer clock (local only, never over the socket) ------------------
+  const LOOKAHEAD_MS = 25;
+  const SCHEDULE_AHEAD_S = 0.1;
+
+  let audio = null;
+  let playing = false;
+  let currentStep = 0;
+  let nextNoteTime = 0;
+  let timer = null;
+  let bpm = 120;
+  const drawQueue = [];
+
+  function stepDuration() {
+    return 60 / bpm / 2; // eighth notes: 8 steps = 2 bars at 4/4
+  }
+
+  function playNote(letter, time) {
+    const freq = letterToFreq(letter);
+    if (freq === null) return;
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(0.25, time + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.15);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(time);
+    osc.stop(time + 0.18);
+  }
+
+  function scheduler() {
+    while (nextNoteTime < audio.currentTime + SCHEDULE_AHEAD_S) {
+      playNote(cells[currentStep].letter, nextNoteTime);
+      drawQueue.push({ step: currentStep, time: nextNoteTime });
+      nextNoteTime += stepDuration();
+      currentStep = (currentStep + 1) % CELL_COUNT;
+    }
+  }
+
+  // highlight in sync with the audio clock, on animation frames
+  let drawnStep = -1;
+  function draw() {
+    if (audio) {
+      while (drawQueue.length && drawQueue[0].time <= audio.currentTime) {
+        drawnStep = drawQueue.shift().step;
+      }
+      nodes.forEach((n, i) => n.el.classList.toggle('active', playing && i === drawnStep));
+    }
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+
+  function start() {
+    if (playing) return;
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    audio.resume();
+    playing = true;
+    currentStep = 0;
+    nextNoteTime = audio.currentTime + 0.05;
+    timer = setInterval(scheduler, LOOKAHEAD_MS);
+    playBtn.classList.add('on');
+    pauseBtn.classList.remove('on');
+  }
+
+  function stop() {
+    if (!playing) return;
+    playing = false;
+    clearInterval(timer);
+    timer = null;
+    drawQueue.length = 0;
+    drawnStep = -1;
+    playBtn.classList.remove('on');
+    pauseBtn.classList.add('on');
+  }
+
+  playBtn.addEventListener('click', start);
+  pauseBtn.addEventListener('click', stop);
+  tempoInput.addEventListener('input', () => {
+    bpm = Number(tempoInput.value);
+    bpmOut.textContent = bpm + ' BPM';
+  });
+
+  // ---- socket: receives letters, sends nothing but hello -------------------
   const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws';
-
   let socket;
   let reconnectDelay = 500;
-
-  function setSize(value) {
-    // 0 → tiny dot, 1 → fills most of the screen
-    sizer.style.transform = 'scale(' + (0.1 + value * 0.9).toFixed(4) + ')';
-  }
-
-  function pulse() {
-    circle.classList.remove('pulse');
-    void circle.offsetWidth; // restart the animation even if one is running
-    circle.classList.add('pulse');
-  }
 
   function connect() {
     socket = new WebSocket(WS_URL);
 
     socket.addEventListener('open', () => {
       reconnectDelay = 500;
-      status.textContent = 'connected';
       socket.send(JSON.stringify({ type: 'hello', role: 'screen' }));
     });
 
     socket.addEventListener('message', (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
-
-      if (msg.type === 'pulse') pulse();
-      else if (msg.type === 'slider') setSize(msg.value);
-      else if (msg.type === 'peers') {
-        status.textContent = 'connected · controllers: ' + msg.controllers + ' · server ' + msg.instance;
-      }
+      if (msg.type !== 'state' && msg.type !== 'state:init') return;
+      cells = msg.cells;
+      render();
+      status.textContent = 'connected · controllers: ' + msg.controllers + ' · server ' + msg.instance;
     });
 
     socket.addEventListener('close', () => {
@@ -97,7 +225,6 @@
     socket.addEventListener('error', () => socket.close());
   }
 
-  setSize(0.3);
   connect();
 </script>
 </body>

@@ -1,31 +1,66 @@
-# Alphabet — realtime proof of concept
+# Alphabet — collaborative letter sequencer
 
-Phone → cloud WebSocket server → screen. A phone opens `/controller.html`, a laptop opens
-`/screen.html`, and the phone drives a white circle on the black screen page in realtime.
+Eight cells hold one letter each (A–Z). The same eight cells are the eight steps of a sequencer:
+`1 → 2 → … → 8 → repeat`. When a step becomes active, the letter in that cell decides the pitch.
 
-This is a disposable technical test, not production architecture. No database, no accounts,
-nothing stored.
+Participants open the controller on their phones, claim a cell, and change its letter live. The
+display plays the loop and shows the active step.
 
-## What's here
+Vanilla HTML/CSS/JS, one Node WebSocket server, deployed on Vercel from GitHub. No framework,
+no database, no accounts.
 
-| File | What it is |
+## Files
+
+| File | Responsibility |
 | --- | --- |
-| `screen.html` | Fullscreen black page with one white circle |
-| `controller.html` | Mobile page: connection status, PULSE button, 0–1 slider |
-| `api/ws.js` | The WebSocket server, deployed as a Vercel Function at `/api/ws` |
-| `lib/hub.js` | The ~70 lines that actually do the work: track clients, broadcast to screens |
-| `server.js` | Local dev server (static files + the same hub), not used in production |
+| `lib/hub.js` | Backend. Authoritative grid: 8 cells, their letters, and who owns each. Validation, locking, broadcasting |
+| `api/ws.js` | Vercel Function entrypoint — the hub as a WebSocket endpoint at `/api/ws` |
+| `server.js` | Local dev server: static files + the same hub |
+| `screen.html` | Display. Grid rendering, sequencer clock, play/pause, tempo, audio |
+| `controller.html` | Phone. Claim/release a cell, pick a letter, see ownership |
+| `letters.js` | Letter → note mapping, isolated so it can be swapped |
 
-Messages are plain JSON:
+## Socket protocol
+
+Client → server:
 
 ```json
 { "type": "hello", "role": "screen" }
-{ "type": "pulse" }
-{ "type": "slider", "value": 0.72 }
+{ "type": "cell:claim",   "index": 2 }
+{ "type": "cell:release", "index": 2 }
+{ "type": "cell:update",  "index": 2, "letter": "X" }
 ```
 
-The server sends back `{ "type": "peers", "screens": 1, "controllers": 2, "instance": "a3f1" }`
-so each page can show how many others are connected, and which server instance it landed on.
+Server → client:
+
+```json
+{ "type": "state:init", "cells": [ … ], "screens": 1, "controllers": 2, "instance": "a3f1" }
+{ "type": "state",      "cells": [ … ], … }
+{ "type": "cell:denied", "index": 2, "reason": "taken" }
+```
+
+Each cell arrives as `{ index, letter, owner }` where `owner` is `null`, `"me"`, or `"other"` —
+resolved per recipient, so internal client ids never leave the server.
+
+Messages are sent only when shared state actually changes. Sequencer ticks, tempo and play/pause
+never touch the socket: the clock runs entirely in the display page.
+
+## Ownership rules (enforced on the server)
+
+- A claim succeeds only if the cell is free; otherwise the requester gets `cell:denied`.
+- One cell per participant — claiming a new cell releases the previous one.
+- `cell:update` is applied only if the requesting socket owns that cell, and the letter matches
+  `/^[A-Z]$/`.
+- A cell is released when the participant releases it explicitly or when the socket closes.
+  There is no inactivity timeout; disconnect handling covers it.
+
+## Letter → note
+
+`letters.js`. Chromatic from C3: A = C3, B = C#3, C = D3 … Z = 25 semitones above C3
+(`BASE_MIDI = 48`). Change that file to retune the piece — nothing else depends on the mapping.
+
+The brief specified A = C1; that lands around 33 Hz, inaudible on laptop and phone speakers, so
+the base was moved up two octaves.
 
 ## Run locally
 
@@ -34,38 +69,30 @@ npm install
 node server.js
 ```
 
-Then open http://localhost:3000/screen.html and http://localhost:3000/controller.html.
-To use a phone on the same wifi, open `http://<your-laptop-ip>:3000/controller.html`.
+Display: http://localhost:3000/screen.html — Controller: http://localhost:3000/controller.html
+From a phone on the same wifi: `http://<your-laptop-ip>:3000/controller.html`.
+
+Audio starts on the first Play click (browsers block sound before a user gesture).
 
 ## Test the deployed version
 
-1. Open `/screen.html` on the computer.
-2. Open `/controller.html` on the phone (mobile data is fine — it goes through the cloud).
-3. Press PULSE: the circle flashes.
-4. Drag the slider: the circle resizes continuously.
-5. Open more controllers — they all drive the same screen.
+1. Open `/screen.html` on the computer, press PLAY — the highlight walks 1…8 and loops, one note
+   per step.
+2. Open `/controller.html` on a phone. Tap a free cell, pick a letter — the display changes
+   immediately and the new pitch is heard on the next pass.
+3. Open a second controller: the first phone's cell shows as taken and cannot be tapped.
+4. Close one controller — its cell becomes free for everyone else.
 
-The controller shows `screens: N`. If it says `screens: 0` while the screen page is open, see
-the second caveat below.
+## Limitations
 
-## Two caveats (Vercel-specific, not bugs in this code)
+**Instance pinning.** Vercel pins each WebSocket connection to one function instance, and a new
+connection is not guaranteed to reach the same one
+(https://vercel.com/docs/functions/websockets — "Manage persistent state"). Clients on different
+instances would see different grids. Both pages print a short server id in their status line: if
+the display and a phone show different ids, reload. A proper fix needs a shared store (Redis),
+deliberately out of scope here.
 
-**Connections drop every 5 minutes.** Vercel Functions have a 300-second maximum duration on
-the free plan, so the WebSocket closes when it's reached. Both pages reconnect automatically
-with backoff, so you'll see a brief "Disconnected" blink and it carries on.
+**5-minute connections.** Function max duration on the free plan is 300 s, so sockets close and
+reconnect. A participant's cell is freed on that drop and can be claimed by someone else.
 
-**Clients can land on different server instances.** Vercel pins a WebSocket connection to one
-function instance, and a new connection isn't guaranteed to reach the same one
-(https://vercel.com/docs/functions/websockets — "Manage persistent state"). If the phone and the
-screen end up on different instances, they can't see each other. The `screens: N` counter on the
-controller makes this visible: if it reads 0 while the screen is open, reload both pages.
-
-With a handful of connections this is rare — Fluid compute puts many connections on one
-instance. Making it impossible requires an external store (Vercel's own realtime guides use
-Redis for cross-instance fan-out), which is deliberately out of scope here.
-
-## Requirements on the Vercel side
-
-WebSockets need **Fluid compute** enabled (default for projects created after April 2025) and
-the WebSocket public beta available on the account. `vercel.json` sets the function's max
-duration to 300s.
+**Memory-only state.** A redeploy or cold start reseeds the grid to A B C D E F G H.

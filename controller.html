@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>Controller</title>
+<title>Sequencer — controller</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -14,64 +14,65 @@
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
     display: flex;
     flex-direction: column;
-    gap: 24px;
-    padding: 24px calc(24px + env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+    gap: 18px;
+    padding: 16px calc(16px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
     touch-action: manipulation;
     -webkit-user-select: none;
     user-select: none;
   }
 
-  .status {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 15px;
-    letter-spacing: .02em;
-  }
-  .dot { width: 12px; height: 12px; border-radius: 50%; background: #d33; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: #d33; flex: none; }
   .status.online .dot { background: #3d8; }
-  .meta { margin-left: auto; font: 12px ui-monospace, monospace; color: #777; }
+  .meta { margin-left: auto; font: 11px ui-monospace, monospace; color: #777; }
 
-  #pulse {
-    flex: 1;
-    min-height: 45vh;
-    border: none;
-    border-radius: 24px;
-    background: #fff;
-    color: #111;
-    font-size: clamp(2rem, 12vw, 4rem);
-    font-weight: 800;
-    letter-spacing: .08em;
-    transition: transform 80ms ease-out, background-color 80ms ease-out;
+  .hint { font-size: 14px; color: #999; min-height: 1.2em; }
+  .hint.warn { color: #f66; }
+
+  .cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .cell {
+    aspect-ratio: 1;
+    border-radius: 14px;
+    border: 2px solid #444;
+    background: #1b1b1b;
+    color: #eee;
+    font: 800 clamp(1.5rem, 9vw, 2.4rem)/1 ui-sans-serif, system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
   }
-  #pulse:active { transform: scale(.97); background: #ffd84d; }
-  #pulse:disabled { opacity: .35; }
+  .cell .idx { font: 500 11px ui-monospace, monospace; color: #777; }
+  .cell.mine { background: #ffd84d; border-color: #ffd84d; color: #111; }
+  .cell.mine .idx { color: #6a5a00; }
+  .cell.taken { background: #191919; border-color: #2a2a2a; color: #555; }
+  .cell.taken .idx { color: #3a3a3a; }
+  .cell:disabled { cursor: default; }
 
-  .slider-row label { display: block; font-size: 14px; color: #999; margin-bottom: 12px; }
-  .slider-row output { color: #fff; font: 14px ui-monospace, monospace; }
+  .panel { display: flex; flex-direction: column; gap: 12px; }
+  .panel[hidden] { display: none; }
+  .panel h2 { margin: 0; font-size: 15px; font-weight: 600; color: #aaa; }
 
-  input[type=range] {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 56px;
+  .letters { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
+  .letters button {
+    aspect-ratio: 1;
+    border-radius: 10px;
+    border: 2px solid #3a3a3a;
+    background: #222;
+    color: #eee;
+    font: 700 clamp(1rem, 4.5vw, 1.3rem)/1 ui-sans-serif, system-ui, sans-serif;
+  }
+  .letters button.current { background: #fff; border-color: #fff; color: #111; }
+
+  #release {
+    padding: 14px;
+    border-radius: 12px;
+    border: 2px solid #666;
     background: transparent;
-  }
-  input[type=range]::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; background: #333; }
-  input[type=range]::-moz-range-track { height: 14px; border-radius: 7px; background: #333; }
-  input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 48px; height: 48px;
-    margin-top: -17px;
-    border-radius: 50%;
-    background: #fff;
-  }
-  input[type=range]::-moz-range-thumb {
-    width: 48px; height: 48px;
-    border: none;
-    border-radius: 50%;
-    background: #fff;
+    color: #eee;
+    font: 600 15px ui-sans-serif, system-ui, sans-serif;
   }
 </style>
 </head>
@@ -81,61 +82,104 @@
     <span class="meta" id="meta"></span>
   </div>
 
-  <button id="pulse" disabled>PULSE</button>
+  <div class="hint" id="hint">Tap a free cell to take it.</div>
 
-  <div class="slider-row">
-    <label for="slider">Size <output id="value">0.30</output></label>
-    <input type="range" id="slider" min="0" max="1" step="0.001" value="0.3">
+  <div class="cells" id="cells"></div>
+
+  <div class="panel" id="panel" hidden>
+    <h2>Your letter</h2>
+    <div class="letters" id="letters"></div>
+    <button id="release">Release cell</button>
   </div>
 
 <script>
+  const CELL_COUNT = 8;
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
   const statusEl = document.getElementById('status');
   const statusText = document.getElementById('statusText');
   const meta = document.getElementById('meta');
-  const pulseBtn = document.getElementById('pulse');
-  const slider = document.getElementById('slider');
-  const valueOut = document.getElementById('value');
+  const hint = document.getElementById('hint');
+  const cellsEl = document.getElementById('cells');
+  const panel = document.getElementById('panel');
+  const lettersEl = document.getElementById('letters');
+  const releaseBtn = document.getElementById('release');
 
-  const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws';
-  const THROTTLE_MS = 40;
+  let cells = Array.from({ length: CELL_COUNT }, (_, i) => ({ index: i, letter: '-', owner: null }));
+  let myIndex = null;
+  const cellNodes = [];
+  const letterNodes = [];
 
-  let socket;
-  let reconnectDelay = 500;
-  let lastSent = 0;
-  let pending = null;
-  let pendingTimer = null;
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'cell';
+    btn.innerHTML = '<span class="glyph">-</span><span class="idx">' + (i + 1) + '</span>';
+    btn.addEventListener('click', () => claim(i));
+    cellsEl.appendChild(btn);
+    cellNodes.push({ btn, glyph: btn.querySelector('.glyph') });
+  }
+
+  for (const letter of ALPHABET) {
+    const btn = document.createElement('button');
+    btn.textContent = letter;
+    btn.addEventListener('click', () => setLetter(letter));
+    lettersEl.appendChild(btn);
+    letterNodes.push(btn);
+  }
+
+  function render() {
+    myIndex = cells.findIndex((c) => c.owner === 'me');
+    if (myIndex < 0) myIndex = null;
+
+    cells.forEach((cell, i) => {
+      const { btn, glyph } = cellNodes[i];
+      glyph.textContent = cell.letter;
+      btn.classList.toggle('mine', cell.owner === 'me');
+      btn.classList.toggle('taken', cell.owner === 'other');
+      btn.disabled = cell.owner === 'other';
+    });
+
+    panel.hidden = myIndex === null;
+    if (myIndex !== null) {
+      const mine = cells[myIndex].letter;
+      letterNodes.forEach((b) => b.classList.toggle('current', b.textContent === mine));
+      hint.textContent = 'You control cell ' + (myIndex + 1) + '.';
+      hint.classList.remove('warn');
+    } else if (!hint.classList.contains('warn')) {
+      hint.textContent = 'Tap a free cell to take it.';
+    }
+  }
+  render();
 
   function send(msg) {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(msg));
-      return true;
-    }
-    return false;
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
   }
 
-  function sendSlider(value) {
-    const now = performance.now();
-    const wait = THROTTLE_MS - (now - lastSent);
-
-    if (wait <= 0) {
-      lastSent = now;
-      pending = null;
-      send({ type: 'slider', value });
-      return;
-    }
-
-    // keep the latest value and flush it once the throttle window closes
-    pending = value;
-    if (pendingTimer === null) {
-      pendingTimer = setTimeout(() => {
-        pendingTimer = null;
-        if (pending === null) return;
-        lastSent = performance.now();
-        send({ type: 'slider', value: pending });
-        pending = null;
-      }, wait);
-    }
+  function claim(index) {
+    if (cells[index].owner === 'other') return;
+    if (cells[index].owner === 'me') return;
+    send({ type: 'cell:claim', index });
   }
+
+  function setLetter(letter) {
+    if (myIndex === null) return;
+    send({ type: 'cell:update', index: myIndex, letter });
+  }
+
+  releaseBtn.addEventListener('click', () => {
+    if (myIndex === null) return;
+    send({ type: 'cell:release', index: myIndex });
+  });
+
+  function warn(text) {
+    hint.textContent = text;
+    hint.classList.add('warn');
+    setTimeout(() => { hint.classList.remove('warn'); render(); }, 1200);
+  }
+
+  const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws';
+  let socket;
+  let reconnectDelay = 500;
 
   function connect() {
     socket = new WebSocket(WS_URL);
@@ -144,16 +188,19 @@
       reconnectDelay = 500;
       statusEl.classList.add('online');
       statusText.textContent = 'Connected';
-      pulseBtn.disabled = false;
       send({ type: 'hello', role: 'controller' });
-      send({ type: 'slider', value: Number(slider.value) });
     });
 
     socket.addEventListener('message', (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
-      if (msg.type === 'peers') {
+
+      if (msg.type === 'state' || msg.type === 'state:init') {
+        cells = msg.cells;
         meta.textContent = 'screens: ' + msg.screens + ' · server ' + msg.instance;
+        render();
+      } else if (msg.type === 'cell:denied') {
+        warn(msg.reason === 'taken' ? 'Someone got there first.' : 'That cell is not yours.');
       }
     });
 
@@ -161,7 +208,6 @@
       statusEl.classList.remove('online');
       statusText.textContent = 'Disconnected';
       meta.textContent = '';
-      pulseBtn.disabled = true;
       setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 10000);
     });
@@ -169,19 +215,6 @@
     socket.addEventListener('error', () => socket.close());
   }
 
-  // pointerdown fires before click, so the screen reacts the moment you touch
-  pulseBtn.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    send({ type: 'pulse' });
-  });
-
-  slider.addEventListener('input', () => {
-    const value = Number(slider.value);
-    valueOut.textContent = value.toFixed(2);
-    sendSlider(value);
-  });
-
-  valueOut.textContent = Number(slider.value).toFixed(2);
   connect();
 </script>
 </body>
