@@ -90,12 +90,15 @@
 
   :focus-visible{outline:1px solid var(--fiber);outline-offset:2px}
 
-  #uiToggle{position:fixed;right:clamp(12px,3vw,28px);top:clamp(12px,3vw,28px);display:flex;align-items:center;gap:8px;min-height:44px;pointer-events:auto;appearance:none;background:var(--panel);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--line);color:var(--fiber);font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:0 13px;cursor:pointer;transition:opacity .2s ease,background .15s}
-  #uiToggle svg{width:17px;height:17px;display:block;flex:none}
-  #uiToggle svg[hidden]{display:none}
-  #uiToggle:hover{background:rgba(47,217,192,.12)}
-  .hud.hidden ~ #uiToggle{opacity:.42}
-  .hud.hidden ~ #uiToggle:hover,.hud.hidden ~ #uiToggle:focus-visible{opacity:1}
+  .corner{position:fixed;right:clamp(12px,3vw,28px);top:clamp(12px,3vw,28px);display:flex;gap:8px;transition:opacity .2s ease}
+  .corner button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;pointer-events:auto;appearance:none;background:var(--panel);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--line);color:var(--fiber);font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:0 13px;cursor:pointer;transition:background .15s}
+  .corner button:hover{background:rgba(47,217,192,.12)}
+  .corner svg{width:17px;height:17px;display:block;flex:none}
+  .corner svg[hidden]{display:none}
+  #fsToggle{width:44px;padding:0}
+  #fsToggle[hidden]{display:none}
+  .hud.hidden ~ .corner{opacity:.42}
+  .hud.hidden ~ .corner:hover,.hud.hidden ~ .corner:focus-within{opacity:1}
 
   .fault{position:fixed;inset:0;display:none;place-items:center;padding:24px;text-align:center;background:var(--ink)}
   .fault p{font-family:var(--mono);font-size:12px;color:var(--dim);line-height:1.7;max-width:38ch}
@@ -105,8 +108,9 @@
     .lede,.note{display:none}
     .foot{flex-direction:column;align-items:stretch;gap:10px}
     .panel{padding:10px 12px}
-    .ident{max-width:none;margin-right:56px}
-    #uiToggle{padding:0;width:44px;justify-content:center}
+    .ident{max-width:none;margin-right:104px}
+    .ident.solo{margin-right:56px}
+    #uiToggle{padding:0;width:44px}
     #uiToggleLbl{display:none}
     .eyebrow{font-size:8.5px;margin-bottom:4px}
     .telemetry{min-width:0}
@@ -174,10 +178,19 @@
         <button type="button" id="playBtn" aria-pressed="true" title="Camera flight (space)">Flight</button>
         <button type="button" id="morphBtn" aria-pressed="true" title="Animate the field (M)">Morph</button>
       </div>
-      <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, M, H</p>
+      <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, M, F, H</p>
     </section>
   </div>
 </div>
+<div class="corner">
+<button type="button" id="fsToggle" aria-pressed="false" title="Full screen (F)" aria-label="Full screen">
+  <svg id="icoFull" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M8.6 3.4H3.4v5.2M15.4 3.4h5.2v5.2M20.6 15.4v5.2h-5.2M3.4 15.4v5.2h5.2"/>
+  </svg>
+  <svg id="icoExit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+    <path d="M3.4 8.6h5.2V3.4M20.6 8.6h-5.2V3.4M15.4 20.6v-5.2h5.2M8.6 20.6v-5.2H3.4"/>
+  </svg>
+</button>
 <button type="button" id="uiToggle" aria-pressed="false" aria-controls="hud" title="Hide panels (H)">
   <svg id="icoOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M1.8 12S5.9 4.9 12 4.9 22.2 12 22.2 12 18.1 19.1 12 19.1 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/>
@@ -187,6 +200,7 @@
   </svg>
   <span id="uiToggleLbl">Hide panels</span>
 </button>
+</div>
 
 <div class="fault" id="fault"><p>This view needs WebGL. The field is marched on the GPU one ray per pixel, so there is no fallback image to show — try a browser with hardware acceleration enabled.</p></div>
 
@@ -700,13 +714,18 @@ void main(){
   morphBtn.addEventListener("click", function(){ setMorph(!state.morph); morphBtn.blur(); });
   setMorph(state.morph);
 
+  // SVGElement has no `hidden` IDL property — set the content attribute
+  function showIcon(node, on){
+    if(on) node.removeAttribute("hidden"); else node.setAttribute("hidden", "");
+  }
+
   var hud = document.getElementById("hud");
   var uiToggle = document.getElementById("uiToggle");
   var icoOpen = document.getElementById("icoOpen"), icoShut = document.getElementById("icoShut");
   var uiLbl = document.getElementById("uiToggleLbl");
   function setHud(v){
     hud.classList.toggle("hidden", !v);
-    icoOpen.hidden = !v; icoShut.hidden = v;
+    showIcon(icoOpen, v); showIcon(icoShut, !v);
     uiLbl.textContent = v ? "Hide panels" : "Show panels";
     uiToggle.title = (v ? "Hide panels" : "Show panels") + " (H)";
     uiToggle.setAttribute("aria-pressed", v ? "false" : "true");
@@ -719,10 +738,54 @@ void main(){
 
   setHud(true);
 
+  // ---- full screen -----------------------------------------------------
+  var fsToggle = document.getElementById("fsToggle");
+  var icoFull = document.getElementById("icoFull"), icoExit = document.getElementById("icoExit");
+  var root = document.documentElement;
+  var enter = root.requestFullscreen || root.webkitRequestFullscreen;
+  var leave = document.exitFullscreen || document.webkitExitFullscreen;
+  var fsAllowed = !!(enter && leave) &&
+    (document.fullscreenEnabled !== false) && (document.webkitFullscreenEnabled !== false);
+
+  function inFullscreen(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+
+  function dropFullscreenButton(){
+    fsToggle.setAttribute("hidden", "");
+    document.querySelector(".ident").classList.add("solo");
+    reframe();
+  }
+
+  function syncFullscreen(){
+    var on = inFullscreen();
+    showIcon(icoFull, !on); showIcon(icoExit, on);
+    fsToggle.setAttribute("aria-pressed", on ? "true" : "false");
+    fsToggle.title = (on ? "Exit full screen" : "Full screen") + " (F)";
+    fsToggle.setAttribute("aria-label", on ? "Exit full screen" : "Full screen");
+    resize();
+  }
+
+  function toggleFullscreen(){
+    if(!fsAllowed) return;
+    try{
+      var r = inFullscreen() ? leave.call(document) : enter.call(root);
+      if(r && r.catch) r.catch(dropFullscreenButton);
+    }catch(err){ dropFullscreenButton(); }
+  }
+
+  if(fsAllowed){
+    fsToggle.addEventListener("click", function(){ toggleFullscreen(); fsToggle.blur(); });
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    document.addEventListener("webkitfullscreenchange", syncFullscreen);
+    syncFullscreen();
+  } else {
+    dropFullscreenButton();
+  }
+
   window.addEventListener("keydown", function(e){
     if(e.target.tagName === "INPUT") return;
     if(e.code === "Space"){ e.preventDefault(); setRunning(!state.running); }
     if(e.key === "m" || e.key === "M"){ setMorph(!state.morph); }
+    if(e.key === "f" || e.key === "F"){ toggleFullscreen(); }
     if(e.key === "h" || e.key === "H"){ setHud(hud.classList.contains("hidden")); }
   });
 
