@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#04060B">
+<meta name="description" content="A brain-shaped field of neuron somata and neurites, ray marched per pixel with a camera in continuous flight.">
+<title>Cortical Flythrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;600;700&display=swap">
+<style>
+  :root{
+    --ink:#04060B;
+    --field:#0A1018;
+    --fiber:#2FD9C0;
+    --soma:#FFC98A;
+    --spike:#9B7BFF;
+    --chrome:#C6D3DC;
+    --dim:#6A7A88;
+    --line:rgba(47,217,192,.22);
+    --panel:rgba(6,10,16,.62);
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --cond:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    background:var(--ink);
+    color:var(--chrome);
+    font-family:var(--cond);
+    overflow:hidden;
+    -webkit-text-size-adjust:100%;
+  }
+  #stage{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--ink);touch-action:none}
+
+  .hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:clamp(14px,3vw,28px)}
+  .hud.hidden{opacity:0;visibility:hidden;transition:opacity .25s ease}
+  .hud > *{pointer-events:none}
+  .hud button,.hud input,.hud a{pointer-events:auto}
+
+  .panel{position:relative;background:var(--panel);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--line);padding:12px 14px}
+  .panel::before,.panel::after{content:"";position:absolute;width:7px;height:7px;border:1px solid var(--fiber);opacity:.55}
+  .panel::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+  .panel::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+
+  .eyebrow{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--fiber);opacity:.85;margin:0 0 6px}
+  h1{font-family:var(--cond);font-weight:700;font-size:clamp(25px,4.6vw,38px);line-height:.98;letter-spacing:-.015em;margin:0;text-wrap:balance;color:#EAF3F6}
+  .lede{margin:8px 0 0;max-width:30ch;font-size:13px;line-height:1.5;color:var(--dim)}
+  .ident{max-width:min(372px,86vw)}
+
+  .foot{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+
+  .telemetry{min-width:196px}
+  .telemetry dl{display:grid;grid-template-columns:auto auto;gap:3px 16px;margin:0;font-family:var(--mono);font-size:11px}
+  .telemetry dt{color:var(--dim);letter-spacing:.08em;text-transform:uppercase;font-size:9.5px;align-self:center}
+  .telemetry dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;color:var(--chrome)}
+  .telemetry dd b{font-weight:500;color:var(--fiber)}
+  .telemetry dd i{font-style:normal;color:var(--dim);font-size:9.5px;margin-left:2px}
+  .rule{height:1px;background:var(--line);margin:8px 0}
+  .scalebar{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.06em}
+  .scalebar span:first-child{display:block;width:44px;height:5px;border:1px solid var(--line);border-top:0;border-bottom-color:var(--fiber)}
+  .note{font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:var(--dim);opacity:.75;margin:6px 0 0}
+
+  .console{display:flex;flex-direction:column;gap:11px;min-width:min(292px,88vw)}
+  .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .seg{display:flex;border:1px solid var(--line)}
+  .seg button{flex:1;appearance:none;background:transparent;border:0;border-right:1px solid var(--line);color:var(--dim);font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.06em;padding:9px 4px;cursor:pointer;transition:color .15s,background .15s}
+  .seg button:last-child{border-right:0}
+  .seg button[aria-pressed="true"]{background:rgba(47,217,192,.13);color:var(--fiber)}
+  .seg button:hover{color:var(--chrome)}
+
+  .slider{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 10px}
+  .slider output{font-family:var(--mono);font-size:10.5px;white-space:nowrap;color:var(--fiber);font-variant-numeric:tabular-nums}
+  .slider input{grid-column:1/-1}
+  input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:22px;background:transparent;cursor:pointer;margin:0}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(90deg,var(--fiber) var(--pct,50%),rgba(198,211,220,.18) var(--pct,50%))}
+  input[type=range]::-moz-range-track{height:2px;background:rgba(198,211,220,.18)}
+  input[type=range]::-moz-range-progress{height:2px;background:var(--fiber)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:16px;margin-top:-7px;background:var(--fiber);border:0;border-radius:1px}
+  input[type=range]::-moz-range-thumb{width:10px;height:16px;background:var(--fiber);border:0;border-radius:1px}
+
+  .transport{display:flex;gap:8px}
+  .transport button{flex:1;appearance:none;background:transparent;border:1px solid var(--line);color:var(--chrome);font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.06em;padding:10px 6px;cursor:pointer;transition:background .15s,color .15s}
+  .transport button:hover{background:rgba(47,217,192,.1);color:var(--fiber)}
+  .hint{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.05em;margin:0}
+
+  :focus-visible{outline:1px solid var(--fiber);outline-offset:2px}
+
+  #reveal{position:fixed;right:clamp(14px,3vw,28px);top:clamp(14px,3vw,28px);display:none;pointer-events:auto;appearance:none;background:var(--panel);border:1px solid var(--line);color:var(--fiber);font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:9px 12px;cursor:pointer}
+  .hud.hidden ~ #reveal{display:block}
+
+  .fault{position:fixed;inset:0;display:none;place-items:center;padding:24px;text-align:center;background:var(--ink)}
+  .fault p{font-family:var(--mono);font-size:12px;color:var(--dim);line-height:1.7;max-width:38ch}
+
+  @media (max-width:760px){
+    .hud{padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+    .lede,.note{display:none}
+    .foot{flex-direction:column;align-items:stretch;gap:10px}
+    .panel{padding:10px 12px}
+    .ident{max-width:none}
+    .eyebrow{font-size:8.5px;margin-bottom:4px}
+    .telemetry{min-width:0}
+    .telemetry dl{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr;grid-template-rows:auto auto;gap:2px 8px}
+    .telemetry dt{font-size:8.5px}
+    .telemetry dd{text-align:left;font-size:12px}
+    .telemetry .wide{display:none}
+    .rule{margin:7px 0}
+    .console{min-width:0;gap:9px}
+    .seg button{padding:11px 4px}
+    .transport button{padding:11px 6px}
+  }
+  @media (max-height:520px){ .ident h1{font-size:22px} .telemetry .wide{display:none} }
+  @media (prefers-reduced-motion:reduce){ .hud.hidden{transition:none} }
+</style>
+
+</head>
+<body>
+<canvas id="stage" aria-label="Ray-marched field of neuron cell bodies and neurites in a brain-shaped volume, with the camera in flight"></canvas>
+
+<div class="hud" id="hud">
+  <header class="ident panel">
+    <p class="eyebrow">Ray-marched SDF · synthetic field</p>
+    <h1>Cortical Flythrough</h1>
+    <p class="lede">Somata and neurites solved per pixel as a single distance function — no mesh, no scan. The camera flies a continuous path; every fiber is the equation resolving in front of it.</p>
+  </header>
+
+  <div class="foot">
+    <section class="telemetry panel" aria-label="Flight telemetry">
+      <dl>
+        <dt class="wide">Path</dt><dd class="wide"><b id="tPath">Orbit</b></dd>
+        <dt>Range</dt><dd><span id="tRange">3.05</span><i>r</i></dd>
+        <dt>Azimuth</dt><dd><span id="tAz">0.0</span><i>°</i></dd>
+        <dt class="wide">Elevation</dt><dd class="wide"><span id="tEl">11.5</span><i>°</i></dd>
+        <dt class="wide">Soma Ø</dt><dd class="wide"><span id="tSoma">10.4</span><i>µm</i></dd>
+        <dt class="wide">Neurite Ø</dt><dd class="wide"><span id="tFib">3.4</span><i>µm</i></dd>
+        <dt>Spikes</dt><dd><span id="tHz">6.0</span><i>Hz</i></dd>
+        <dt class="wide">Steps/px</dt><dd class="wide"><span id="tSteps">88</span></dd>
+        <dt>Frame</dt><dd><span id="tMs">16.7</span><i>ms</i></dd>
+      </dl>
+      <div class="rule"></div>
+      <div class="scalebar"><span></span><span id="tScale">19 µm</span></div>
+      <p class="note">Synthetic field — not anatomical data</p>
+    </section>
+
+    <section class="console panel" aria-label="Flight console">
+      <div>
+        <p class="lbl" id="pathLbl">Flight path</p>
+        <div class="seg" role="group" aria-labelledby="pathLbl">
+          <button type="button" data-mode="0" aria-pressed="true">Orbit</button>
+          <button type="button" data-mode="1" aria-pressed="false">Fly-through</button>
+          <button type="button" data-mode="2" aria-pressed="false">Drift</button>
+        </div>
+      </div>
+      <div class="slider">
+        <label class="lbl" for="density">Cell density</label><output id="densityOut">19 µm pitch</output>
+        <input id="density" type="range" min="9" max="22" step="0.5" value="15">
+      </div>
+      <div class="slider">
+        <label class="lbl" for="spike">Spike rate</label><output id="spikeOut">6.0 Hz</output>
+        <input id="spike" type="range" min="0" max="100" step="1" value="55">
+      </div>
+      <div class="transport">
+        <button type="button" id="playBtn" aria-pressed="true">Pause</button>
+        <button type="button" id="hideBtn">Hide panels</button>
+      </div>
+      <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, H</p>
+    </section>
+  </div>
+</div>
+<button type="button" id="reveal">Show panels</button>
+
+<div class="fault" id="fault"><p>This view needs WebGL. The field is marched on the GPU one ray per pixel, so there is no fallback image to show — try a browser with hardware acceleration enabled.</p></div>
+
+<script type="x-shader/x-fragment" id="fs">
+precision highp float;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec3  uEye;
+uniform vec3  uTgt;
+uniform float uRoll;
+uniform float uScale;
+uniform float uSpike;
+uniform float uSteps;
+uniform float uFov;
+uniform float uShift;
+
+const vec3 FIBER = vec3(0.185, 0.851, 0.753);
+const vec3 SOMA  = vec3(1.000, 0.788, 0.541);
+const vec3 SPIKE = vec3(0.608, 0.482, 1.000);
+
+float gy(vec3 p){ return dot(sin(p), cos(p.yzx)); }
+
+vec3 hash33(vec3 p){
+  p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+float smin(float a, float b, float k){
+  float h = clamp(0.5 + 0.5*(b-a)/k, 0.0, 1.0);
+  return mix(b, a, h) - k*h*(1.0-h);
+}
+float smax(float a, float b, float k){
+  float h = clamp(0.5 - 0.5*(b-a)/k, 0.0, 1.0);
+  return mix(b, a, h) + k*h*(1.0-h);
+}
+
+float sdEll(vec3 p, vec3 r){
+  float k0 = length(p/r);
+  float k1 = length(p/(r*r));
+  return k0*(k0-1.0)/max(k1, 1e-5);
+}
+
+float shell(vec3 p){
+  vec3 q = p; q.x = abs(q.x) - 0.50;
+  float d = sdEll(q, vec3(0.56 * (1.0 - 0.13*q.z), 0.63, 1.12));
+  vec3 c = p - vec3(0.0, -0.50, -0.80); c.x = abs(c.x) - 0.22;
+  d = smin(d, sdEll(c, vec3(0.30, 0.24, 0.34)), 0.13);
+  d = smin(d, sdEll(p - vec3(0.0, -0.78, -0.34), vec3(0.15, 0.34, 0.19)), 0.14);
+  d -= 0.030 * sin(p.x*5.2) * sin(p.y*4.4 + 1.3) * sin(p.z*4.8 + 2.1);
+  return d;
+}
+
+float spikeAt(vec3 p){
+  float w = sin(dot(p, vec3( 1.4, 0.7, 1.9)) * 3.2 - uTime*2.3)
+          + sin(dot(p, vec3(-1.7, 1.2, 0.6)) * 4.1 - uTime*3.0)
+          + 0.7 * sin(length(p) * 7.0 - uTime*4.2);
+  return smoothstep(1.25, 2.35, w);
+}
+
+float map(vec3 p, out float sd){
+  sd = 1e5;
+  float sh = shell(p);
+  if(sh > 0.09) return sh - 0.02;
+
+  float s = uScale;
+  float C = 1.45 / s;
+  vec3 id = floor(p/C - 0.5);
+  for(int i=0;i<2;i++){
+    for(int j=0;j<2;j++){
+      for(int k=0;k<2;k++){
+        vec3 cid = id + vec3(float(i), float(j), float(k));
+        vec3 h = hash33(cid);
+        vec3 cen = (cid + 0.5 + (h - 0.5) * 0.55) * C;
+        sd = min(sd, length(p - cen) / (0.70 + 0.50*h.z));
+      }
+    }
+  }
+  float u = sd / C;
+  float bead = 0.55 * exp(-3.2 * u * u);
+
+  vec3 q = p * s;
+  float w1 = abs(gy(q)) - (0.27 + bead);
+  float w2 = abs(gy(q*0.61 + vec3(2.7, 1.3, 4.1))) - (0.32 + bead);
+  float d = smax(w1, w2, 0.22) / (2.1 * s);
+  return smax(d, sh, 0.05);
+}
+
+vec3 calcNormal(vec3 p){
+  float t;
+  vec2 e = vec2(1.0, -1.0) * 0.0016;
+  return normalize(
+    e.xyy * map(p + e.xyy, t) + e.yyx * map(p + e.yyx, t) +
+    e.yxy * map(p + e.yxy, t) + e.xxx * map(p + e.xxx, t));
+}
+
+vec3 bgCol(vec3 rd){
+  return mix(vec3(0.010, 0.015, 0.026), vec3(0.020, 0.032, 0.055), rd.y*0.5 + 0.5);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / min(uRes.x, uRes.y);
+  uv.y -= uShift;
+  float cr = cos(uRoll), sr = sin(uRoll);
+  uv = mat2(cr, -sr, sr, cr) * uv;
+
+  vec3 ww = normalize(uTgt - uEye);
+  vec3 uu = normalize(cross(ww, vec3(0.0, 1.0, 0.0)));
+  vec3 vv = cross(uu, ww);
+  vec3 rd = normalize(uv.x*uu + uv.y*vv + uFov*ww);
+  vec3 ro = uEye;
+
+  vec3 col = bgCol(rd);
+  float glow = 0.0;
+
+  float bR = 1.74;
+  float b = dot(ro, rd);
+  float cc = dot(ro, ro) - bR*bR;
+  float disc = b*b - cc;
+
+  if(disc > 0.0){
+    float hs = sqrt(disc);
+    float tNear = max(-b - hs, 0.0);
+    float tFar  = -b + hs;
+
+    if(tFar > 0.0){
+      float t = tNear;
+      float sd = 1e5, sdHit = 1e5, dmy;
+      float hit = 0.0, steps = 0.0;
+
+      for(int i=0;i<136;i++){
+        if(float(i) >= uSteps) break;
+        vec3 p = ro + rd*t;
+        float d = map(p, sd);
+        glow += exp(-38.0 * max(d, 0.0)) * (0.45 + 1.05*spikeAt(p)) * 0.017;
+        if(d < 0.0009*t + 0.0005){ hit = 1.0; sdHit = sd; break; }
+        t += d * 0.70;
+        steps += 1.0;
+        if(t > tFar) break;
+      }
+
+      if(hit > 0.5){
+        vec3 p = ro + rd*t;
+        vec3 n = calcNormal(p);
+        float C = 1.45 / uScale;
+        float somaMix = 1.0 - smoothstep(C*0.18, C*0.62, sdHit);
+
+        vec3 base = mix(FIBER, SOMA, somaMix);
+        vec3 key = normalize(-rd + vec3(0.30, 0.62, 0.10));
+        float dif = max(dot(n, key), 0.0);
+        float bak = max(dot(n, -key), 0.0) * 0.28;
+        float fres = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+        float ao = clamp(map(p + n*0.05, dmy) / 0.05, 0.0, 1.0) * 0.72 + 0.28;
+        float sp = spikeAt(p);
+
+        col = base * (0.05 + 0.62*dif) * ao;
+        col += SPIKE * vec3(0.88, 0.84, 1.0) * bak * 0.55;
+        col += SPIKE * sp * (0.70 + 2.2*somaMix) * uSpike;
+        col += SOMA * somaMix * somaMix * 0.42;
+        col += FIBER * (0.10 + 0.60*fres);
+
+        float fog = 1.0 - exp(-0.52 * max(t - tNear, 0.0));
+        col = mix(col, bgCol(rd) * 1.15, fog * 0.78);
+      }
+    }
+  }
+
+  col += (FIBER*0.60 + SPIKE*0.40) * glow * (0.55 + 0.70*uSpike);
+
+  col = col / (1.0 + col);
+  col = pow(max(col, 0.0), vec3(0.4545));
+
+  vec2 sv = gl_FragCoord.xy/uRes - 0.5;
+  col *= 1.0 - 0.55 * dot(sv, sv);
+  col += (hash33(vec3(gl_FragCoord.xy, uTime)).x - 0.5) * 0.022;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+(function(){
+  "use strict";
+
+  var VS = "attribute vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }";
+  var UM_PER_UNIT = 200;
+
+  var canvas = document.getElementById("stage");
+  var gl = canvas.getContext("webgl2", {antialias:false, alpha:false, powerPreference:"high-performance"})
+        || canvas.getContext("webgl",  {antialias:false, alpha:false, powerPreference:"high-performance"});
+
+  if(!gl){
+    document.getElementById("fault").style.display = "grid";
+    document.getElementById("hud").style.display = "none";
+    return;
+  }
+
+  var src = document.getElementById("fs").textContent;
+  var hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+  if(!hp || hp.precision < 23) src = src.replace("precision highp float;", "precision mediump float;");
+
+  function compile(type, source){
+    var sh = gl.createShader(type);
+    gl.shaderSource(sh, source);
+    gl.compileShader(sh);
+    if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+      console.error(gl.getShaderInfoLog(sh));
+      return null;
+    }
+    return sh;
+  }
+
+  var vs = compile(gl.VERTEX_SHADER, VS), fs = compile(gl.FRAGMENT_SHADER, src);
+  if(!vs || !fs){
+    document.getElementById("fault").style.display = "grid";
+    document.getElementById("hud").style.display = "none";
+    return;
+  }
+  var prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  var buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  var loc = gl.getAttribLocation(prog, "aPos");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  var U = {};
+  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift"].forEach(function(n){
+    U[n] = gl.getUniformLocation(prog, n);
+  });
+
+  if(window.matchMedia("(pointer:coarse)").matches){
+    document.getElementById("hint").textContent = "Drag to steer · pinch to range in";
+  }
+  var coarse = window.matchMedia("(pointer:coarse)").matches;
+  var small  = window.matchMedia("(max-width:760px)").matches;
+  var mobile = coarse || small;
+  var reduce = window.matchMedia("(prefers-reduced-motion:reduce)").matches;
+
+  var state = {
+    mode: 0,
+    scaleQ: mobile ? 0.58 : 0.90,
+    dprCap: mobile ? 1.5 : 2.0,
+    steps: mobile ? 68 : 104,
+    fov: mobile ? 1.15 : 1.30,
+    density: 15.0,
+    spike: 0.55,
+    zoom: 1.0,
+    shift: 0.0,
+    fit: 1.0,
+    running: !reduce,
+    clock: 12.0,
+    dragAz: 0, dragEl: 0,
+    velAz: 0, velEl: 0
+  };
+
+  // keep the field centred in whatever strip the panels leave visible
+  function reframe(){
+    var cw = canvas.clientWidth || window.innerWidth;
+    var ch = canvas.clientHeight || window.innerHeight;
+    var minDim = Math.min(cw, ch) || 1;
+    state.fit = ch > cw * 1.25 ? 0.92 : 1.0;
+    if(document.getElementById("hud").classList.contains("hidden")){ state.shift = 0; return; }
+    var top = document.querySelector(".ident").getBoundingClientRect().bottom;
+    var bot = ch - document.querySelector(".foot").getBoundingClientRect().top;
+    state.shift = Math.max(-0.45, Math.min(0.45, (bot - top) * 0.5 / minDim));
+  }
+
+  var W = 0, H = 0;
+  function resize(){
+    var cw = canvas.clientWidth || window.innerWidth;
+    var ch = canvas.clientHeight || window.innerHeight;
+    var dpr = Math.min(window.devicePixelRatio || 1, state.dprCap);
+    var w = Math.max(2, Math.round(cw * dpr * state.scaleQ));
+    var h = Math.max(2, Math.round(ch * dpr * state.scaleQ));
+    if(w !== W || h !== H){
+      W = w; H = h;
+      canvas.width = W; canvas.height = H;
+      gl.viewport(0, 0, W, H);
+    }
+    reframe();
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", resize);
+
+  function pathPoint(u){
+    return [1.62*Math.sin(u), 0.52*Math.sin(u*0.73 + 1.1), 1.72*Math.cos(u*0.61)];
+  }
+  function rotateDir(d, az, el){
+    var ca = Math.cos(az), sa = Math.sin(az);
+    var x = d[0]*ca + d[2]*sa, z = -d[0]*sa + d[2]*ca;
+    var len = Math.sqrt(x*x + z*z) || 1e-5;
+    var ce = Math.cos(el), se = Math.sin(el);
+    var y = d[1]*ce + len*se;
+    var k = (len*ce - d[1]*se) / len;
+    return [x*k, y, z*k];
+  }
+
+  var eye = [0,0,3], tgt = [0,0,0], roll = 0;
+
+  function camera(t){
+    var az, el, r;
+    if(state.mode === 1){
+      var u = t * 0.085;
+      eye = pathPoint(u);
+      var ah = pathPoint(u + 0.07);
+      var d = rotateDir([ah[0]-eye[0], ah[1]-eye[1], ah[2]-eye[2]], state.dragAz, state.dragEl);
+      tgt = [eye[0]+d[0], eye[1]+d[1], eye[2]+d[2]];
+      roll = 0.10 * Math.sin(t*0.21);
+      return;
+    }
+    if(state.mode === 2){
+      az = 0.9 + t*0.035 + state.dragAz;
+      el = -0.10 + 0.09*Math.sin(t*0.09) + state.dragEl;
+      r  = (2.02 + 0.14*Math.sin(t*0.05)) * state.zoom * state.fit;
+      tgt = [0.22*Math.sin(t*0.06), 0.10*Math.sin(t*0.043) - 0.05, 0.18*Math.cos(t*0.05)];
+      roll = 0.03*Math.sin(t*0.07);
+    } else {
+      az = t*0.10 + state.dragAz;
+      el = 0.20 + 0.16*Math.sin(t*0.13) + state.dragEl;
+      r  = (3.05 + 0.30*Math.sin(t*0.071)) * state.zoom * state.fit;
+      tgt = [0, 0.03*Math.sin(t*0.2), 0];
+      roll = 0.04*Math.sin(t*0.11);
+    }
+    el = Math.max(-1.35, Math.min(1.35, el));
+    eye = [
+      tgt[0] + r*Math.cos(el)*Math.sin(az),
+      tgt[1] + r*Math.sin(el),
+      tgt[2] + r*Math.cos(el)*Math.cos(az)
+    ];
+  }
+
+  var el = {
+    path: document.getElementById("tPath"), range: document.getElementById("tRange"),
+    az: document.getElementById("tAz"), el: document.getElementById("tEl"),
+    soma: document.getElementById("tSoma"), fib: document.getElementById("tFib"),
+    hz: document.getElementById("tHz"), steps: document.getElementById("tSteps"),
+    ms: document.getElementById("tMs"), scale: document.getElementById("tScale")
+  };
+  var MODES = ["Orbit", "Fly-through", "Drift"];
+
+  var last = performance.now(), ema = 16.7, acc = 0, frames = 0, tele = 0;
+
+  function telemetry(){
+    var r = Math.sqrt(eye[0]*eye[0] + eye[1]*eye[1] + eye[2]*eye[2]);
+    var azd = Math.atan2(eye[0], eye[2]) * 180 / Math.PI;
+    if(azd < 0) azd += 360;
+    var eld = Math.asin(Math.max(-1, Math.min(1, eye[1] / (r || 1)))) * 180 / Math.PI;
+    var C = 1.45 / state.density;
+    el.path.textContent = MODES[state.mode];
+    el.range.textContent = r.toFixed(2);
+    el.az.textContent = azd.toFixed(1);
+    el.el.textContent = eld.toFixed(1);
+    el.soma.textContent = (2.0 * 0.82 / (2.1 * state.density) * UM_PER_UNIT).toFixed(1);
+    el.fib.textContent  = (2.0 * 0.27 / (2.1 * state.density) * UM_PER_UNIT).toFixed(1);
+    el.hz.textContent = (state.spike * 11).toFixed(1);
+    el.steps.textContent = String(Math.round(state.steps));
+    el.ms.textContent = ema.toFixed(1);
+    el.scale.textContent = Math.round(C * UM_PER_UNIT) + " µm";
+  }
+
+  function frame(now){
+    var dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    if(state.running) state.clock += dt;
+
+    state.dragAz += state.velAz; state.dragEl += state.velEl;
+    state.velAz *= 0.90; state.velEl *= 0.90;
+    state.dragEl = Math.max(-1.0, Math.min(1.0, state.dragEl));
+
+    resize();
+    camera(state.clock);
+
+    gl.uniform2f(U.uRes, W, H);
+    gl.uniform1f(U.uTime, state.clock);
+    gl.uniform3f(U.uEye, eye[0], eye[1], eye[2]);
+    gl.uniform3f(U.uTgt, tgt[0], tgt[1], tgt[2]);
+    gl.uniform1f(U.uRoll, roll);
+    gl.uniform1f(U.uScale, state.density);
+    gl.uniform1f(U.uSpike, state.spike);
+    gl.uniform1f(U.uSteps, state.steps);
+    gl.uniform1f(U.uFov, state.fov);
+    gl.uniform1f(U.uShift, state.shift);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    ema = ema * 0.92 + (dt * 1000) * 0.08;
+    frames++; acc += dt;
+    if(frames >= 45){
+      if(ema > 30 && state.scaleQ > 0.42){ state.scaleQ = Math.max(0.42, state.scaleQ - 0.08); }
+      else if(ema < 15 && state.scaleQ < (mobile ? 0.85 : 1.0)){ state.scaleQ += 0.05; }
+      if(ema > 42 && state.steps > 48) state.steps -= 8;
+      frames = 0;
+    }
+    tele += dt;
+    if(tele > 0.2){ telemetry(); tele = 0; }
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---- input ----------------------------------------------------------
+  var pointers = {}, lastPinch = 0, pid = null, px = 0, py = 0;
+
+  canvas.addEventListener("pointerdown", function(e){
+    canvas.setPointerCapture(e.pointerId);
+    pointers[e.pointerId] = {x:e.clientX, y:e.clientY};
+    if(pid === null){ pid = e.pointerId; px = e.clientX; py = e.clientY; }
+  });
+  canvas.addEventListener("pointermove", function(e){
+    if(!pointers[e.pointerId]) return;
+    pointers[e.pointerId] = {x:e.clientX, y:e.clientY};
+    var ids = Object.keys(pointers);
+    if(ids.length >= 2){
+      var a = pointers[ids[0]], b = pointers[ids[1]];
+      var dist = Math.hypot(a.x-b.x, a.y-b.y);
+      if(lastPinch) setZoom(state.zoom * (lastPinch / dist));
+      lastPinch = dist;
+      return;
+    }
+    if(e.pointerId !== pid) return;
+    var dx = e.clientX - px, dy = e.clientY - py;
+    px = e.clientX; py = e.clientY;
+    state.velAz = -dx * 0.0032;
+    state.velEl =  dy * 0.0024;
+    state.dragAz += state.velAz * 3;
+    state.dragEl = Math.max(-1.0, Math.min(1.0, state.dragEl + state.velEl * 3));
+  });
+  function release(e){
+    delete pointers[e.pointerId];
+    if(Object.keys(pointers).length < 2) lastPinch = 0;
+    if(e.pointerId === pid) pid = null;
+  }
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+  canvas.addEventListener("wheel", function(e){
+    e.preventDefault();
+    setZoom(state.zoom * (1 + Math.sign(e.deltaY) * 0.07));
+  }, {passive:false});
+
+  function setZoom(z){ state.zoom = Math.max(0.42, Math.min(1.8, z)); }
+
+  // ---- console --------------------------------------------------------
+  var segBtns = document.querySelectorAll(".seg button");
+  Array.prototype.forEach.call(segBtns, function(btn){
+    btn.addEventListener("click", function(){
+      state.mode = parseInt(btn.dataset.mode, 10);
+      Array.prototype.forEach.call(segBtns, function(b){
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+      state.dragAz = 0; state.dragEl = 0; state.velAz = 0; state.velEl = 0;
+      telemetry();
+    });
+  });
+
+  function paint(input){
+    var pct = (input.value - input.min) / (input.max - input.min) * 100;
+    input.style.setProperty("--pct", pct + "%");
+  }
+  var dens = document.getElementById("density"), densOut = document.getElementById("densityOut");
+  var spk  = document.getElementById("spike"),   spkOut  = document.getElementById("spikeOut");
+  dens.addEventListener("input", function(){
+    state.density = parseFloat(dens.value);
+    densOut.textContent = Math.round(1.45 / state.density * UM_PER_UNIT) + " µm pitch";
+    paint(dens); telemetry();
+  });
+  spk.addEventListener("input", function(){
+    state.spike = parseFloat(spk.value) / 100;
+    spkOut.textContent = (state.spike * 11).toFixed(1) + " Hz";
+    paint(spk); telemetry();
+  });
+  paint(dens); paint(spk);
+
+  var playBtn = document.getElementById("playBtn");
+  function setRunning(v){
+    state.running = v;
+    playBtn.textContent = v ? "Pause" : "Fly";
+    playBtn.setAttribute("aria-pressed", v ? "true" : "false");
+  }
+  playBtn.addEventListener("click", function(){ setRunning(!state.running); });
+  setRunning(state.running);
+
+  var hud = document.getElementById("hud"), reveal = document.getElementById("reveal");
+  function setHud(v){
+    hud.classList.toggle("hidden", !v);
+    reveal.style.display = v ? "none" : "block";
+    reframe();
+  }
+  document.getElementById("hideBtn").addEventListener("click", function(){ setHud(false); });
+  reveal.addEventListener("click", function(){ setHud(true); reveal.blur(); });
+
+  window.addEventListener("keydown", function(e){
+    if(e.target.tagName === "INPUT") return;
+    if(e.code === "Space"){ e.preventDefault(); setRunning(!state.running); }
+    if(e.key === "h" || e.key === "H"){ setHud(hud.classList.contains("hidden")); }
+  });
+
+  canvas.addEventListener("webglcontextlost", function(e){ e.preventDefault(); });
+
+  resize();
+  reframe();
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(reframe);
+  telemetry();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
