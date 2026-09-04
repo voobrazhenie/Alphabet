@@ -181,6 +181,22 @@
         <input id="density" type="range" min="9" max="22" step="0.5" value="15">
       </div>
       <div>
+        <p class="lbl" id="warpLbl">Domain warp</p>
+        <div class="transport" role="group" aria-labelledby="warpLbl">
+          <button type="button" data-warp="0" aria-pressed="true" title="Noise displacement of the whole space">Noise</button>
+          <button type="button" data-warp="1" aria-pressed="false" title="Whirl the space about Y">Twist</button>
+          <button type="button" data-warp="2" aria-pressed="false" title="Bend the space about Z">Bend</button>
+        </div>
+      </div>
+      <div class="slider">
+        <label class="lbl" for="warpAmt">Warp strength</label><output id="warpAmtOut">0.30</output>
+        <input id="warpAmt" type="range" min="0" max="100" step="1" value="30">
+      </div>
+      <div class="slider">
+        <label class="lbl" for="warpFreq">Warp scale</label><output id="warpFreqOut">1.60 /unit</output>
+        <input id="warpFreq" type="range" min="30" max="400" step="5" value="160">
+      </div>
+      <div>
         <p class="lbl" id="resLbl">Resolution</p>
         <div class="seg" role="group" aria-labelledby="resLbl">
           <button type="button" data-res="0" aria-pressed="true">Auto</button>
@@ -252,6 +268,9 @@ uniform float uPulse;
 uniform float uScene;
 uniform float uThick;
 uniform float uSS;
+uniform float uWarpAmt;   // global warp strength
+uniform float uWarpFreq;  // noise warp frequency
+uniform vec3  uWarpOn;    // per-deformation switches: x noise, y twist, z bend
 
 const vec3 FIBER = vec3(0.185, 0.851, 0.753);
 const vec3 SOMA  = vec3(1.000, 0.788, 0.541);
@@ -411,7 +430,61 @@ float neuron(vec3 p, out float sd){
   return d;
 }
 
-float map(vec3 p, out float sd){
+// three channels of value noise out of one set of eight corner hashes
+vec3 vn3(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  f = f*f*(3.0 - 2.0*f);
+  vec2 e = vec2(0.0, 1.0);
+  vec3 a = hash33(i + e.xxx), b = hash33(i + e.yxx);
+  vec3 c = hash33(i + e.xyx), d = hash33(i + e.yyx);
+  vec3 g = hash33(i + e.xxy), h = hash33(i + e.yxy);
+  vec3 k = hash33(i + e.xyy), l = hash33(i + e.yyy);
+  return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+             mix(mix(g, h, f.x), mix(k, l, f.x), f.y), f.z) - 0.5;
+}
+
+// Deform the coordinate space itself, before any object is looked up.
+// Composing warps multiplies their Lipschitz constants; `lip` accumulates an
+// upper bound on that product. Dividing the scene distance by it turns the
+// warped field back into a valid lower bound on the true distance, which is
+// exactly what sphere tracing needs in order not to step through a surface.
+vec3 domainWarp(vec3 p, out float lip){
+  lip = 1.0;
+  float amt = uWarpAmt;
+
+  // bend — rotate about Z by an angle that grows along X.
+  // The rotation is an isometry; the angle varying with x adds k*r.
+  if(uWarpOn.z > 0.5){
+    float k = 1.60 * amt;
+    float a = k * p.x;
+    float c = cos(a), sn = sin(a);
+    p = vec3(c*p.x - sn*p.y, sn*p.x + c*p.y, p.z);
+    lip *= sqrt(1.0 + k*k*dot(p.xy, p.xy));
+  }
+
+  // twist — rotate about Y by an angle that grows along Y (a whirl).
+  if(uWarpOn.y > 0.5){
+    float k = 1.70 * amt;
+    float a = k * p.y;
+    float c = cos(a), sn = sin(a);
+    p = vec3(c*p.x - sn*p.z, p.y, sn*p.x + c*p.z);
+    lip *= sqrt(1.0 + k*k*dot(p.xz, p.xz));
+  }
+
+  // noise displacement — the domain warp proper. Smoothstep value noise is
+  // C1, so the displaced space stays continuous; its per-axis gradient peaks
+  // at 1.5 per unit cell, and 2.2 covers the 3-channel worst case.
+  if(uWarpOn.x > 0.5){
+    float f = uWarpFreq;
+    float A = 0.55 * amt;
+    p += A * vn3(p*f + vec3(0.0, uMorph*0.045, 0.0));
+    lip *= 1.0 + A * f * 2.2;
+  }
+  return p;
+}
+
+// the undistorted scene: both objects, evaluated in whatever space it is given
+float scene(vec3 p, out float sd){
   if(uScene > 0.5) return neuron(p, sd);
   sd = 1e5;
   float sh = shell(p);
@@ -448,6 +521,14 @@ float map(vec3 p, out float sd){
   return smax(d, sh, 0.05);
 }
 
+// every ray march, normal and AO probe goes through here, so one warp applied
+// at this single point deforms the whole scene consistently — and the normals
+// below, being finite differences of this function, follow the warped surface
+float map(vec3 p, out float sd){
+  float lip;
+  return scene(domainWarp(p, lip), sd) / lip;
+}
+
 vec3 calcNormal(vec3 p){
   float t;
   vec2 e = vec2(1.0, -1.0) * 0.0016;
@@ -475,7 +556,8 @@ vec3 render(vec2 fc){
   vec3 col = bgCol(rd);
   float glow = 0.0;
 
-  float bR = 1.74;
+  // rotations preserve radius; only the noise term can push the surface out
+  float bR = 1.74 + (uWarpOn.x > 0.5 ? 0.55 * uWarpAmt : 0.0);
   float b = dot(ro, rd);
   float cc = dot(ro, ro) - bR*bR;
   float disc = b*b - cc;
@@ -654,7 +736,7 @@ void main(){
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
   var U = {};
-  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse","uScene","uThick","uSS"].forEach(function(n){
+  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse","uScene","uThick","uSS","uWarpAmt","uWarpFreq","uWarpOn"].forEach(function(n){
     U[n] = gl.getUniformLocation(prog, n);
   });
   var P = {
@@ -695,6 +777,9 @@ void main(){
     dprCap: 3.0,
     aa: 1,
     resPin: 0,
+    warpAmt: 0.30,
+    warpFreq: 1.60,
+    warpOn: [1, 0, 0],
     steps: mobile ? 68 : 104,
     fov: mobile ? 1.15 : 1.30,
     density: 15.0,
@@ -867,6 +952,9 @@ void main(){
     gl.uniform1f(U.uScene, state.scene);
     gl.uniform1f(U.uThick, state.thick);
     gl.uniform1f(U.uSS, state.aa === 2 ? 2.0 : 1.0);
+    gl.uniform1f(U.uWarpAmt, state.warpAmt);
+    gl.uniform1f(U.uWarpFreq, state.warpFreq);
+    gl.uniform3f(U.uWarpOn, state.warpOn[0], state.warpOn[1], state.warpOn[2]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -1007,6 +1095,30 @@ void main(){
   }
   morphBtn.addEventListener("click", function(){ setMorph(!state.morph); morphBtn.blur(); });
   setMorph(state.morph);
+
+  var warpBtns = document.querySelectorAll("[data-warp]");
+  Array.prototype.forEach.call(warpBtns, function(btn){
+    btn.addEventListener("click", function(){
+      var i = parseInt(btn.dataset.warp, 10);
+      state.warpOn[i] = state.warpOn[i] ? 0 : 1;
+      btn.setAttribute("aria-pressed", state.warpOn[i] ? "true" : "false");
+      btn.blur();
+    });
+  });
+  var wAmt = document.getElementById("warpAmt"), wAmtOut = document.getElementById("warpAmtOut");
+  var wFrq = document.getElementById("warpFreq"), wFrqOut = document.getElementById("warpFreqOut");
+  wAmt.addEventListener("input", function(){
+    state.warpAmt = parseFloat(wAmt.value) / 100;
+    wAmtOut.textContent = state.warpAmt.toFixed(2);
+    paint(wAmt);
+  });
+  wFrq.addEventListener("input", function(){
+    state.warpFreq = parseFloat(wFrq.value) / 100;
+    wFrqOut.textContent = state.warpFreq.toFixed(2) + " /unit";
+    paint(wFrq);
+  });
+
+  paint(wAmt); paint(wFrq);
 
   var resBtns = document.querySelectorAll("[data-res]");
   Array.prototype.forEach.call(resBtns, function(btn){
