@@ -524,9 +524,12 @@ float scene(vec3 p, out float sd){
 // every ray march, normal and AO probe goes through here, so one warp applied
 // at this single point deforms the whole scene consistently — and the normals
 // below, being finite differences of this function, follow the warped surface
+float map(vec3 p, out float sd, out float lip){
+  return scene(domainWarp(p, lip), sd) / lip;
+}
 float map(vec3 p, out float sd){
   float lip;
-  return scene(domainWarp(p, lip), sd) / lip;
+  return map(p, sd, lip);
 }
 
 vec3 calcNormal(vec3 p){
@@ -570,18 +573,25 @@ vec3 render(vec2 fc){
     if(tFar > 0.0){
       float t = tNear;
       float sd = 1e5, sdHit = 1e5, dmy;
-      float hit = 0.0, steps = 0.0;
+      float hit = 0.0, steps = 0.0, d = 1e5, lip = 1.0;
 
-      for(int i=0;i<136;i++){
+      for(int i=0;i<224;i++){
         if(float(i) >= uSteps) break;
         vec3 p = ro + rd*t;
-        float d = map(p, sd);
-        glow += exp(-38.0 * max(d, 0.0)) * (0.45 + 1.05*spikeAt(p)) * (uScene > 0.5 ? 0.008 : 0.017);
+        d = map(p, sd, lip);
+        // the warp shrinks reported distances; the glow wants the real one,
+        // otherwise warped regions bloom into a milky haze
+        glow += exp(-38.0 * max(d * lip, 0.0)) * (0.45 + 1.05*spikeAt(p)) * (uScene > 0.5 ? 0.008 : 0.017);
         if(d < 0.0009*t + 0.0005){ hit = 1.0; sdHit = sd; break; }
         t += d * 0.70;
         steps += 1.0;
         if(t > tFar) break;
       }
+      // A strong warp divides every step down, so a ray can exhaust its budget
+      // a hair short of a surface it was clearly converging on. Dropping those
+      // pixels to background is what painted a dark veil over the object, so
+      // shade them where they stopped instead.
+      if(hit < 0.5 && t <= tFar && d < 0.02){ hit = 1.0; sdHit = sd; }
 
       if(hit > 0.5){
         vec3 p = ro + rd*t;
@@ -597,7 +607,8 @@ vec3 render(vec2 fc){
         float fres = 0.035 + 0.965 * pow(1.0 - ndv, 5.0);
         vec3 hv = normalize(key - rd);
         float spec = pow(max(dot(n, hv), 0.0), 48.0);
-        float ao = clamp(map(p + n*0.05, dmy) / 0.05, 0.0, 1.0) * 0.72 + 0.28;
+        float aoLip;
+        float ao = clamp(map(p + n*0.05, dmy, aoLip) * aoLip / 0.05, 0.0, 1.0) * 0.72 + 0.28;
         float sp = spikeAt(p);
 
         col = base * (0.05 + 0.62*dif) * ao;
@@ -796,6 +807,17 @@ void main(){
     velAz: 0, velEl: 0
   };
 
+  // A warp divides the marching step by up to this much, so the ray needs
+  // proportionally more of them to cover the same distance.
+  function warpK(){
+    var R = 1.74, K = 1;
+    if(state.warpOn[2]) K *= Math.sqrt(1 + Math.pow(1.60 * state.warpAmt * R, 2));
+    if(state.warpOn[1]) K *= Math.sqrt(1 + Math.pow(1.70 * state.warpAmt * R, 2));
+    if(state.warpOn[0]) K *= 1 + 0.55 * state.warpAmt * state.warpFreq * 2.2;
+    return Math.min(K, 2.6);
+  }
+  function marchSteps(){ return Math.min(224, Math.round(state.steps * warpK())); }
+
   // keep the field centred in whatever strip the panels leave visible
   function reframe(){
     var cw = canvas.clientWidth || window.innerWidth;
@@ -913,7 +935,7 @@ void main(){
       el.fib.textContent  = (2.0 * 0.27 / (2.1 * state.density) * UM_PER_UNIT).toFixed(1);
     }
     el.hz.textContent = (state.spike * 11).toFixed(1);
-    el.steps.textContent = String(Math.round(state.steps));
+    el.steps.textContent = String(marchSteps());
     el.fps.textContent = (1000 / Math.max(ema, 1)).toFixed(0);
     el.res.textContent = W + "×" + H;
     var native = (canvas.clientWidth || window.innerWidth) * (window.devicePixelRatio || 1);
@@ -944,7 +966,7 @@ void main(){
     gl.uniform1f(U.uRoll, roll);
     gl.uniform1f(U.uScale, state.density);
     gl.uniform1f(U.uSpike, state.spike);
-    gl.uniform1f(U.uSteps, state.steps);
+    gl.uniform1f(U.uSteps, marchSteps());
     gl.uniform1f(U.uFov, state.fov);
     gl.uniform1f(U.uShift, state.shift);
     gl.uniform1f(U.uMorph, state.mClock);
