@@ -72,6 +72,7 @@
   .slider{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 10px}
   .slider output{font-family:var(--mono);font-size:10.5px;white-space:nowrap;color:var(--fiber);font-variant-numeric:tabular-nums}
   .slider input{grid-column:1/-1}
+  .slider[hidden]{display:none}
   input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:22px;background:transparent;cursor:pointer;margin:0}
   input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(90deg,var(--fiber) var(--pct,50%),rgba(198,211,220,.18) var(--pct,50%))}
   input[type=range]::-moz-range-track{height:2px;background:rgba(198,211,220,.18)}
@@ -159,6 +160,13 @@
 
     <section class="console panel" aria-label="Flight console">
       <div>
+        <p class="lbl" id="sceneLbl">Object</p>
+        <div class="seg" role="group" aria-labelledby="sceneLbl">
+          <button type="button" data-scene="0" aria-pressed="true">Brain</button>
+          <button type="button" data-scene="1" aria-pressed="false">Neuron</button>
+        </div>
+      </div>
+      <div>
         <p class="lbl" id="pathLbl">Flight path</p>
         <div class="seg" role="group" aria-labelledby="pathLbl">
           <button type="button" data-mode="0" aria-pressed="true">Orbit</button>
@@ -166,9 +174,13 @@
           <button type="button" data-mode="2" aria-pressed="false">Drift</button>
         </div>
       </div>
-      <div class="slider">
+      <div class="slider" id="densRow">
         <label class="lbl" for="density">Cell density</label><output id="densityOut">19 µm pitch</output>
         <input id="density" type="range" min="9" max="22" step="0.5" value="15">
+      </div>
+      <div class="slider" id="thickRow" hidden>
+        <label class="lbl" for="thick">Line width</label><output id="thickOut">11.2 µm</output>
+        <input id="thick" type="range" min="6" max="70" step="1" value="28">
       </div>
       <div class="slider">
         <label class="lbl" for="spike">Spike rate</label><output id="spikeOut">6.0 Hz</output>
@@ -219,6 +231,8 @@ uniform float uFov;
 uniform float uShift;
 uniform float uMorph;
 uniform float uPulse;
+uniform float uScene;
+uniform float uThick;
 
 const vec3 FIBER = vec3(0.185, 0.851, 0.753);
 const vec3 SOMA  = vec3(1.000, 0.788, 0.541);
@@ -264,7 +278,70 @@ float spikeAt(vec3 p){
   return smoothstep(1.25, 2.35, w);
 }
 
+float dot2(vec3 v){ return dot(v, v); }
+
+// exact distance to a quadratic Bezier segment (Quilez) — one primitive, whole cell
+float sdBezier(vec3 p, vec3 A, vec3 B, vec3 C){
+  vec3 a = B - A;
+  vec3 b = A - 2.0*B + C + 1e-5;
+  vec3 c = a * 2.0;
+  vec3 d = A - p;
+  float kk = 1.0 / dot(b, b);
+  float kx = kk * dot(a, b);
+  float ky = kk * (2.0*dot(a,a) + dot(d,b)) / 3.0;
+  float kz = kk * dot(d, a);
+  float res;
+  float p1 = ky - kx*kx;
+  float q  = kx*(2.0*kx*kx - 3.0*ky) + kz;
+  float h  = q*q + 4.0*p1*p1*p1;
+  if(h >= 0.0){
+    h = sqrt(h);
+    vec2 x = (vec2(h, -h) - q) * 0.5;
+    vec2 uv = sign(x) * pow(abs(x), vec2(1.0/3.0));
+    float t = clamp(uv.x + uv.y - kx, 0.0, 1.0);
+    res = dot2(d + (c + b*t)*t);
+  } else {
+    float z = sqrt(-p1);
+    float v = acos(clamp(q / (p1*z*2.0), -1.0, 1.0)) / 3.0;
+    float m = cos(v), nn = sin(v) * 1.732050808;
+    vec3 t = clamp(vec3(m+m, -nn-m, nn-m)*z - kx, 0.0, 1.0);
+    res = min(dot2(d + (c + b*t.x)*t.x), dot2(d + (c + b*t.y)*t.y));
+  }
+  return sqrt(res);
+}
+
+// one cell: soma, six dendrites, a daughter branch off each, one long axon
+float neuron(vec3 p, out float sd){
+  sd = length(p);
+  float m = uMorph * 0.5;
+  float r = uThick;
+  float d = sd - (0.11 + r);
+  for(int i=0;i<6;i++){
+    float fi = float(i);
+    float ang = fi * 2.39996;
+    float z = 1.0 - (2.0*fi + 1.0) / 6.0;
+    float rr = sqrt(max(0.0, 1.0 - z*z));
+    vec3 dir = vec3(rr*cos(ang), z, rr*sin(ang));
+    vec3 sv = normalize(cross(dir, vec3(0.31, 0.79, 0.53)) + 1e-4);
+    float w1 = sin(m*0.61 + fi*1.7), w2 = sin(m*0.47 + fi*2.9);
+    vec3 A = dir * 0.09;
+    vec3 B = dir * 0.50 + sv * (0.22 + 0.10*w1);
+    vec3 C = dir * 0.92 + sv * (0.06 + 0.16*w2) + vec3(0.0, 0.05*w1, 0.0);
+    d = smin(d, sdBezier(p, A, B, C) - r, 0.045);
+    vec3 tip = C - B;
+    vec3 B2 = C + tip * 0.45 - sv * 0.16;
+    vec3 C2 = C + tip * 0.85 - sv * (0.34 + 0.14*w2) + vec3(0.10*w2, 0.0, 0.10*w1);
+    d = smin(d, sdBezier(p, C, B2, C2) - r*0.68, 0.035);
+  }
+  vec3 ax = vec3(0.0, -0.09, 0.0);
+  d = smin(d, sdBezier(p, ax,
+        vec3(0.30*sin(m*0.40), -0.75, 0.22),
+        vec3(-0.35, -1.28, -0.20 + 0.25*sin(m*0.33))) - r*0.85, 0.05);
+  return d;
+}
+
 float map(vec3 p, out float sd){
+  if(uScene > 0.5) return neuron(p, sd);
   sd = 1e5;
   float sh = shell(p);
   if(sh > 0.09) return sh - 0.02;
@@ -346,9 +423,9 @@ void main(){
         if(float(i) >= uSteps) break;
         vec3 p = ro + rd*t;
         float d = map(p, sd);
-        glow += exp(-38.0 * max(d, 0.0)) * (0.45 + 1.05*spikeAt(p)) * 0.017;
+        glow += exp(-38.0 * max(d, 0.0)) * (0.45 + 1.05*spikeAt(p)) * (uScene > 0.5 ? 0.008 : 0.017);
         if(d < 0.0009*t + 0.0005){ hit = 1.0; sdHit = sd; break; }
-        t += d * 0.70;
+        t += d * (uScene > 0.5 ? 0.92 : 0.70);
         steps += 1.0;
         if(t > tFar) break;
       }
@@ -356,7 +433,7 @@ void main(){
       if(hit > 0.5){
         vec3 p = ro + rd*t;
         vec3 n = calcNormal(p);
-        float C = 1.45 / uScale;
+        float C = uScene > 0.5 ? 0.42 : 1.45 / uScale;
         float somaMix = 1.0 - smoothstep(C*0.18, C*0.62, sdHit);
 
         vec3 base = mix(FIBER, SOMA, somaMix);
@@ -373,7 +450,7 @@ void main(){
         col += SOMA * somaMix * somaMix * 0.42;
         col += FIBER * (0.10 + 0.60*fres);
 
-        float fog = 1.0 - exp(-0.52 * max(t - tNear, 0.0));
+        float fog = 1.0 - exp(-(uScene > 0.5 ? 0.22 : 0.52) * max(t - tNear, 0.0));
         col = mix(col, bgCol(rd) * 1.15, fog * 0.78);
       }
     }
@@ -442,7 +519,7 @@ void main(){
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
   var U = {};
-  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse"].forEach(function(n){
+  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse","uScene","uThick"].forEach(function(n){
     U[n] = gl.getUniformLocation(prog, n);
   });
 
@@ -456,6 +533,8 @@ void main(){
 
   var state = {
     mode: 0,
+    scene: 0,
+    thick: 0.028,
     scaleQ: mobile ? 0.58 : 0.90,
     dprCap: mobile ? 1.5 : 2.0,
     steps: mobile ? 68 : 104,
@@ -573,12 +652,17 @@ void main(){
     el.range.textContent = r.toFixed(2);
     el.az.textContent = azd.toFixed(1);
     el.el.textContent = eld.toFixed(1);
-    el.soma.textContent = (2.0 * 0.82 / (2.1 * state.density) * UM_PER_UNIT).toFixed(1);
-    el.fib.textContent  = (2.0 * 0.27 / (2.1 * state.density) * UM_PER_UNIT).toFixed(1);
+    if(state.scene === 1){
+      el.soma.textContent = (2.0 * (0.11 + state.thick) * UM_PER_UNIT).toFixed(1);
+      el.fib.textContent  = (2.0 * state.thick * UM_PER_UNIT).toFixed(1);
+    } else {
+      el.soma.textContent = (2.0 * 0.82 / (2.1 * state.density) * UM_PER_UNIT).toFixed(1);
+      el.fib.textContent  = (2.0 * 0.27 / (2.1 * state.density) * UM_PER_UNIT).toFixed(1);
+    }
     el.hz.textContent = (state.spike * 11).toFixed(1);
     el.steps.textContent = String(Math.round(state.steps));
     el.ms.textContent = ema.toFixed(1);
-    el.scale.textContent = Math.round(C * UM_PER_UNIT) + " µm";
+    el.scale.textContent = state.scene === 1 ? "13 Bézier curves" : Math.round(C * UM_PER_UNIT) + " µm";
   }
 
   function frame(now){
@@ -607,6 +691,8 @@ void main(){
     gl.uniform1f(U.uShift, state.shift);
     gl.uniform1f(U.uMorph, state.mClock);
     gl.uniform1f(U.uPulse, state.pClock);
+    gl.uniform1f(U.uScene, state.scene);
+    gl.uniform1f(U.uThick, state.thick);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     ema = ema * 0.92 + (dt * 1000) * 0.08;
@@ -665,7 +751,7 @@ void main(){
   function setZoom(z){ state.zoom = Math.max(0.42, Math.min(1.8, z)); }
 
   // ---- console --------------------------------------------------------
-  var segBtns = document.querySelectorAll(".seg button");
+  var segBtns = document.querySelectorAll("[data-mode]");
   Array.prototype.forEach.call(segBtns, function(btn){
     btn.addEventListener("click", function(){
       state.mode = parseInt(btn.dataset.mode, 10);
@@ -674,6 +760,20 @@ void main(){
       });
       state.dragAz = 0; state.dragEl = 0; state.velAz = 0; state.velEl = 0;
       telemetry();
+    });
+  });
+
+  var sceneBtns = document.querySelectorAll("[data-scene]");
+  var densRow = document.getElementById("densRow"), thickRow = document.getElementById("thickRow");
+  Array.prototype.forEach.call(sceneBtns, function(btn){
+    btn.addEventListener("click", function(){
+      state.scene = parseInt(btn.dataset.scene, 10);
+      Array.prototype.forEach.call(sceneBtns, function(b){
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+      densRow.hidden  = state.scene === 1;
+      thickRow.hidden = state.scene === 0;
+      reframe(); telemetry(); btn.blur();
     });
   });
 
@@ -693,7 +793,13 @@ void main(){
     spkOut.textContent = (state.spike * 11).toFixed(1) + " Hz";
     paint(spk); telemetry();
   });
-  paint(dens); paint(spk);
+  var thk = document.getElementById("thick"), thkOut = document.getElementById("thickOut");
+  thk.addEventListener("input", function(){
+    state.thick = parseFloat(thk.value) / 1000;
+    thkOut.textContent = (state.thick * 2 * UM_PER_UNIT).toFixed(1) + " µm";
+    paint(thk); telemetry();
+  });
+  paint(dens); paint(spk); paint(thk);
 
   var playBtn = document.getElementById("playBtn");
   function setRunning(v){
