@@ -86,7 +86,15 @@
   .transport button::before{content:"";width:6px;height:6px;flex:none;background:var(--dim);opacity:.5;transition:background .15s,opacity .15s,box-shadow .15s}
   .transport button[aria-pressed="true"]{background:rgba(47,217,192,.13);color:var(--fiber)}
   .transport button[aria-pressed="true"]::before{background:var(--fiber);opacity:1;box-shadow:0 0 7px var(--fiber)}
+  .transport.wrap{flex-wrap:wrap}
+  .transport.wrap button{flex:1 1 44%;padding:9px 4px;font-size:11px}
   .transport button:hover{color:var(--chrome)}
+  .swatches{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;align-items:center}
+  .swatches[hidden]{display:none}
+  input[type=color]{appearance:none;-webkit-appearance:none;width:100%;height:26px;padding:0;border:1px solid var(--line);background:transparent;cursor:pointer}
+  input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
+  input[type=color]::-webkit-color-swatch{border:0}
+  input[type=color]::-moz-color-swatch{border:0}
   .transport button[aria-pressed="true"]:hover{color:var(--fiber);background:rgba(47,217,192,.19)}
   .hint{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.05em;margin:0}
 
@@ -166,6 +174,7 @@
         <div class="seg" role="group" aria-labelledby="sceneLbl">
           <button type="button" data-scene="0" aria-pressed="true">Brain</button>
           <button type="button" data-scene="1" aria-pressed="false">Neuron</button>
+          <button type="button" data-scene="2" aria-pressed="false" title="LiquidChrome">Chrome</button>
         </div>
       </div>
       <div>
@@ -176,7 +185,33 @@
           <button type="button" data-mode="2" aria-pressed="false">Drift</button>
         </div>
       </div>
-      <div class="slider" id="densRow">
+      <div data-only="2" hidden>
+        <p class="lbl" id="lcLbl">Construction</p>
+        <div class="transport wrap" role="group" aria-labelledby="lcLbl">
+          <button type="button" data-lc="0" aria-pressed="true" title="A 20 × 20 × 0.5 slab">1 Slab</button>
+          <button type="button" data-lc="1" aria-pressed="true" title="Perlin relief along the thin axis">2 Relief</button>
+          <button type="button" data-lc="2" aria-pressed="true" title="An undeformed copy in the same place">3 Copy</button>
+          <button type="button" data-lc="3" aria-pressed="true" title="Keep only where the two overlap">4 Intersect</button>
+          <button type="button" data-lc="4" aria-pressed="true" title="Twirl the result">5 Twirl</button>
+        </div>
+      </div>
+      <div class="slider" data-only="2" hidden>
+        <label class="lbl" for="lcRelief">Relief</label><output id="lcReliefOut">0.22</output>
+        <input id="lcRelief" type="range" min="0" max="60" step="1" value="22">
+      </div>
+      <div class="slider" data-only="2" hidden>
+        <label class="lbl" for="lcFreq">Terrain scale</label><output id="lcFreqOut">4.50</output>
+        <input id="lcFreq" type="range" min="60" max="1100" step="10" value="450">
+      </div>
+      <div class="slider" data-only="2" hidden>
+        <label class="lbl" for="lcThick">Slab thickness</label><output id="lcThickOut">0.50</output>
+        <input id="lcThick" type="range" min="10" max="240" step="2" value="50">
+      </div>
+      <div class="slider" data-only="2" hidden>
+        <label class="lbl" for="lcTwirl">Twirl</label><output id="lcTwirlOut">1.10 rad</output>
+        <input id="lcTwirl" type="range" min="0" max="300" step="5" value="110">
+      </div>
+      <div class="slider" id="densRow" data-only="0">
         <label class="lbl" for="density">Cell density</label><output id="densityOut">19 µm pitch</output>
         <input id="density" type="range" min="9" max="22" step="0.5" value="15">
       </div>
@@ -212,13 +247,18 @@
           <button type="button" data-aa="2" aria-pressed="false">SSAA ×4</button>
         </div>
       </div>
-      <div class="slider" id="thickRow" hidden>
+      <div class="slider" id="thickRow" data-only="1" hidden>
         <label class="lbl" for="thick">Line width</label><output id="thickOut">11.2 µm</output>
         <input id="thick" type="range" min="6" max="70" step="1" value="28">
       </div>
-      <div class="slider">
+      <div class="slider" data-only="01">
         <label class="lbl" for="spike">Spike rate</label><output id="spikeOut">6.0 Hz</output>
         <input id="spike" type="range" min="0" max="100" step="1" value="55">
+      </div>
+      <div class="swatches">
+        <label class="lbl" for="colA">Structure</label><label class="lbl" for="colB">Accent</label>
+        <input type="color" id="colA" value="#2FD9C0" aria-label="Structure colour">
+        <input type="color" id="colB" value="#FFC98A" aria-label="Accent colour">
       </div>
       <div class="transport">
         <button type="button" id="playBtn" aria-pressed="true" title="Camera flight (space)">Flight</button>
@@ -271,9 +311,14 @@ uniform float uSS;
 uniform float uWarpAmt;   // global warp strength
 uniform float uWarpFreq;  // noise warp frequency
 uniform vec3  uWarpOn;    // per-deformation switches: x noise, y twist, z bend
+uniform vec3  uColA;      // structure colour of the active object
+uniform vec3  uColB;      // accent colour of the active object
+uniform vec4  uLcOn;      // LiquidChrome steps 1-4: slab, relief, copy, intersect
+uniform float uLcTwirl;   // step 5, radians at the centre; 0 when the step is off
+uniform float uLcRelief;
+uniform float uLcFreq;
+uniform float uLcThick;   // half-thickness of the slab
 
-const vec3 FIBER = vec3(0.185, 0.851, 0.753);
-const vec3 SOMA  = vec3(1.000, 0.788, 0.541);
 const vec3 SPIKE = vec3(0.608, 0.482, 1.000);
 const vec3 RIM   = vec3(0.620, 0.898, 1.000);
 
@@ -430,6 +475,82 @@ float neuron(vec3 p, out float sd){
   return d;
 }
 
+float sdBox(vec3 p, vec3 b){
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// classic 3D gradient noise (Perlin): a random unit gradient per lattice corner,
+// dotted with the offset and blended with the quintic fade, so it is C2
+float pgd(vec3 i, vec3 f){ return dot(normalize(hash33(i) - 0.5), f); }
+float perlin(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  vec3 u = f*f*f*(f*(f*6.0 - 15.0) + 10.0);
+  float a = pgd(i + vec3(0.0,0.0,0.0), f - vec3(0.0,0.0,0.0));
+  float b = pgd(i + vec3(1.0,0.0,0.0), f - vec3(1.0,0.0,0.0));
+  float c = pgd(i + vec3(0.0,1.0,0.0), f - vec3(0.0,1.0,0.0));
+  float d = pgd(i + vec3(1.0,1.0,0.0), f - vec3(1.0,1.0,0.0));
+  float e = pgd(i + vec3(0.0,0.0,1.0), f - vec3(0.0,0.0,1.0));
+  float g = pgd(i + vec3(1.0,0.0,1.0), f - vec3(1.0,0.0,1.0));
+  float h = pgd(i + vec3(0.0,1.0,1.0), f - vec3(0.0,1.0,1.0));
+  float k = pgd(i + vec3(1.0,1.0,1.0), f - vec3(1.0,1.0,1.0));
+  return 1.40 * mix(mix(mix(a,b,u.x), mix(c,d,u.x), u.y),
+                    mix(mix(e,g,u.x), mix(h,k,u.x), u.y), u.z);
+}
+
+// LiquidChrome, built exactly as the five steps read:
+//   1  a 20 x 20 x 0.5 slab (normalised to half-extents 1, uLcThick, 1)
+//   2  displaced along its thin axis by two octaves of Perlin -> a landscape
+//   3  an undeformed copy of the same slab, in the same place
+//   4  kept only where the two overlap  (max of the two distances)
+//   5  the result twirled about the vertical axis
+float liquid(vec3 p, out float sd){
+  sd = 1e5;
+  vec3 q = p;
+
+  // 5 - twirl. Applied to the coordinates ahead of both slabs, which twirls
+  // the intersection itself. The angle falls off with radius, so the shear it
+  // adds is bounded by the twirl amount.
+  if(uLcTwirl != 0.0){
+    float r = length(q.xz);
+    float a = uLcTwirl * max(0.0, 1.0 - r / 1.45);
+    float c = cos(a), sn = sin(a);
+    q = vec3(c*q.x - sn*q.z, q.y, sn*q.x + c*q.z);
+  }
+
+  vec3 he = vec3(1.0, uLcThick, 1.0);
+
+  // 2 - the height field, two octaves, drifting when the field is animated
+  float h = 0.0, lip = 1.0;
+  if(uLcOn.y > 0.5){
+    float f = uLcFreq;
+    h = perlin(vec3(q.x*f, uMorph*0.06, q.z*f))
+      + 0.5 * perlin(vec3(q.x*f*2.03 + 5.2, uMorph*0.09 + 1.7, q.z*f*2.03 - 3.1));
+    h *= 0.667 * uLcRelief;
+    // a displaced box is no longer 1-Lipschitz; the slope of the height field
+    // adds to the gradient, so divide by an upper bound on it
+    lip = 1.0 + uLcRelief * uLcFreq * 3.0;
+  }
+
+  float dA = sdBox(q - vec3(0.0, h, 0.0), he) / lip;   // 1 + 2
+  float dB = sdBox(q, he);                             // 3
+
+  float d;
+  if(uLcOn.x > 0.5 && uLcOn.z > 0.5){
+    d = uLcOn.w > 0.5 ? max(dA, dB) : min(dA, dB);     // 4 - intersect, else union
+  } else if(uLcOn.x > 0.5){
+    d = dA;
+  } else if(uLcOn.z > 0.5){
+    d = dB;
+  } else {
+    d = 1e5;
+  }
+
+  // tint by altitude: the crests take the accent colour
+  sd = (0.5 - 0.5 * clamp(h / max(uLcRelief, 1e-3), -1.0, 1.0)) * 0.42;
+  return d;
+}
+
 // three channels of value noise out of one set of eight corner hashes
 vec3 vn3(vec3 p){
   vec3 i = floor(p), f = fract(p);
@@ -485,6 +606,7 @@ vec3 domainWarp(vec3 p, out float lip){
 
 // the undistorted scene: both objects, evaluated in whatever space it is given
 float scene(vec3 p, out float sd){
+  if(uScene > 1.5) return liquid(p, sd);
   if(uScene > 0.5) return neuron(p, sd);
   sd = 1e5;
   float sh = shell(p);
@@ -599,7 +721,7 @@ vec3 render(vec2 fc){
         float C = uScene > 0.5 ? 0.42 : 1.45 / uScale;
         float somaMix = 1.0 - smoothstep(C*0.18, C*0.62, sdHit);
 
-        vec3 base = mix(FIBER, SOMA, somaMix);
+        vec3 base = mix(uColA, uColB, somaMix);
         vec3 key = normalize(-rd + vec3(0.30, 0.62, 0.10));
         float dif = max(dot(n, key), 0.0);
         float bak = max(dot(n, -key), 0.0) * 0.28;
@@ -614,8 +736,8 @@ vec3 render(vec2 fc){
         col = base * (0.05 + 0.62*dif) * ao;
         col += SPIKE * vec3(0.88, 0.84, 1.0) * bak * 0.55;
         col += SPIKE * sp * (0.70 + 2.2*somaMix) * uSpike;
-        col += SOMA * somaMix * somaMix * 0.42;
-        col += FIBER * 0.06;
+        col += uColB * somaMix * somaMix * 0.42;
+        col += uColA * 0.06;
         col += RIM * fres * (0.62 + 0.80*ao) * (0.85 + 0.55*somaMix);
         col += RIM * spec * (0.45 + 3.2*fres);
 
@@ -625,7 +747,7 @@ vec3 render(vec2 fc){
     }
   }
 
-  col += (FIBER*0.60 + SPIKE*0.40) * glow * (0.55 + 0.70*uSpike);
+  col += (uColA*0.60 + SPIKE*0.40) * glow * (0.55 + 0.70*uSpike);
 
   col = col / (1.0 + col);
   col = pow(max(col, 0.0), vec3(0.4545));
@@ -747,7 +869,8 @@ void main(){
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
   var U = {};
-  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse","uScene","uThick","uSS","uWarpAmt","uWarpFreq","uWarpOn"].forEach(function(n){
+  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse","uScene","uThick","uSS","uWarpAmt","uWarpFreq","uWarpOn",
+   "uColA","uColB","uLcOn","uLcTwirl","uLcRelief","uLcFreq","uLcThick"].forEach(function(n){
     U[n] = gl.getUniformLocation(prog, n);
   });
   var P = {
@@ -791,6 +914,10 @@ void main(){
     warpAmt: 0.30,
     warpFreq: 1.60,
     warpOn: [1, 0, 0],
+    lcOn: [1, 1, 1, 1, 1],
+    lcRelief: 0.22, lcFreq: 4.50, lcThick: 0.025, lcTwirl: 1.10,
+    // structure + accent colour per object: brain, neuron, LiquidChrome
+    colors: [["#2FD9C0", "#FFC98A"], ["#2FD9C0", "#FFC98A"], ["#6F93A8", "#FFE3B0"]],
     steps: mobile ? 68 : 104,
     fov: mobile ? 1.15 : 1.30,
     density: 15.0,
@@ -806,6 +933,17 @@ void main(){
     dragAz: 0, dragEl: 0,
     velAz: 0, velEl: 0
   };
+
+  var rgbCache = {};
+  function rgb(hex){
+    var v = rgbCache[hex];
+    if(!v){
+      v = [parseInt(hex.substr(1,2),16)/255, parseInt(hex.substr(3,2),16)/255,
+           parseInt(hex.substr(5,2),16)/255];
+      rgbCache[hex] = v;
+    }
+    return v;
+  }
 
   // A warp divides the marching step by up to this much, so the ray needs
   // proportionally more of them to cover the same distance.
@@ -927,7 +1065,10 @@ void main(){
     el.range.textContent = r.toFixed(2);
     el.az.textContent = azd.toFixed(1);
     el.el.textContent = eld.toFixed(1);
-    if(state.scene === 1){
+    if(state.scene === 2){
+      el.soma.textContent = "—";
+      el.fib.textContent  = "—";
+    } else if(state.scene === 1){
       el.soma.textContent = (2.0 * (0.11 + state.thick) * UM_PER_UNIT).toFixed(1);
       el.fib.textContent  = (2.0 * state.thick * UM_PER_UNIT).toFixed(1);
     } else {
@@ -940,7 +1081,9 @@ void main(){
     el.res.textContent = W + "×" + H;
     var native = (canvas.clientWidth || window.innerWidth) * (window.devicePixelRatio || 1);
     el.nat.textContent = (W / Math.max(native, 1)).toFixed(2) + "× native";
-    el.scale.textContent = state.scene === 1 ? "16 Bézier curves" : Math.round(C * UM_PER_UNIT) + " µm";
+    el.scale.textContent = state.scene === 2 ? "20 × 20 × " + (state.lcThick * 20).toFixed(2) + " slab"
+                         : state.scene === 1 ? "16 Bézier curves"
+                         : Math.round(C * UM_PER_UNIT) + " µm";
   }
 
   function frame(now){
@@ -977,6 +1120,14 @@ void main(){
     gl.uniform1f(U.uWarpAmt, state.warpAmt);
     gl.uniform1f(U.uWarpFreq, state.warpFreq);
     gl.uniform3f(U.uWarpOn, state.warpOn[0], state.warpOn[1], state.warpOn[2]);
+    var ca = rgb(state.colors[state.scene][0]), cb = rgb(state.colors[state.scene][1]);
+    gl.uniform3f(U.uColA, ca[0], ca[1], ca[2]);
+    gl.uniform3f(U.uColB, cb[0], cb[1], cb[2]);
+    gl.uniform4f(U.uLcOn, state.lcOn[0], state.lcOn[1], state.lcOn[2], state.lcOn[3]);
+    gl.uniform1f(U.uLcTwirl, state.lcOn[4] ? state.lcTwirl : 0.0);
+    gl.uniform1f(U.uLcRelief, state.lcRelief);
+    gl.uniform1f(U.uLcFreq, state.lcFreq);
+    gl.uniform1f(U.uLcThick, state.lcThick);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -1062,18 +1213,27 @@ void main(){
   });
 
   var sceneBtns = document.querySelectorAll("[data-scene]");
-  var densRow = document.getElementById("densRow"), thickRow = document.getElementById("thickRow");
   Array.prototype.forEach.call(sceneBtns, function(btn){
     btn.addEventListener("click", function(){
       state.scene = parseInt(btn.dataset.scene, 10);
       Array.prototype.forEach.call(sceneBtns, function(b){
         b.setAttribute("aria-pressed", b === btn ? "true" : "false");
       });
-      densRow.hidden  = state.scene === 1;
-      thickRow.hidden = state.scene === 0;
-      reframe(); telemetry(); btn.blur();
+      applyScene(); btn.blur();
     });
   });
+
+  // only the controls that belong to the active object stay on screen
+  var scoped = document.querySelectorAll("[data-only]");
+  function applyScene(){
+    var v = String(state.scene);
+    Array.prototype.forEach.call(scoped, function(el){
+      el.hidden = el.getAttribute("data-only").indexOf(v) < 0;
+    });
+    colA.value = state.colors[state.scene][0];
+    colB.value = state.colors[state.scene][1];
+    reframe(); telemetry();
+  }
 
   function paint(input){
     var pct = (input.value - input.min) / (input.max - input.min) * 100;
@@ -1141,6 +1301,33 @@ void main(){
   });
 
   paint(wAmt); paint(wFrq);
+
+  var lcBtns = document.querySelectorAll("[data-lc]");
+  Array.prototype.forEach.call(lcBtns, function(btn){
+    btn.addEventListener("click", function(){
+      var i = parseInt(btn.dataset.lc, 10);
+      state.lcOn[i] = state.lcOn[i] ? 0 : 1;
+      btn.setAttribute("aria-pressed", state.lcOn[i] ? "true" : "false");
+      telemetry(); btn.blur();
+    });
+  });
+  function lcSlider(id, key, scale, fmt){
+    var inp = document.getElementById(id), out = document.getElementById(id + "Out");
+    inp.addEventListener("input", function(){
+      state[key] = parseFloat(inp.value) * scale;
+      out.textContent = fmt(state[key]);
+      paint(inp); telemetry();
+    });
+    paint(inp);
+  }
+  lcSlider("lcRelief", "lcRelief", 0.01,  function(v){ return v.toFixed(2); });
+  lcSlider("lcFreq",   "lcFreq",   0.01,  function(v){ return v.toFixed(2); });
+  lcSlider("lcThick",  "lcThick",  0.0005, function(v){ return (v * 20).toFixed(2); });
+  lcSlider("lcTwirl",  "lcTwirl",  0.01,  function(v){ return v.toFixed(2) + " rad"; });
+
+  var colA = document.getElementById("colA"), colB = document.getElementById("colB");
+  colA.addEventListener("input", function(){ state.colors[state.scene][0] = colA.value; });
+  colB.addEventListener("input", function(){ state.colors[state.scene][1] = colB.value; });
 
   var resBtns = document.querySelectorAll("[data-res]");
   Array.prototype.forEach.call(resBtns, function(btn){
@@ -1244,6 +1431,7 @@ void main(){
 
   canvas.addEventListener("webglcontextlost", function(e){ e.preventDefault(); });
 
+  applyScene();
   resize();
   reframe();
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(reframe);
