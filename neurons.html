@@ -59,9 +59,10 @@
   .rule{height:1px;background:var(--line);margin:8px 0}
   .scalebar{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.06em}
   .scalebar span:first-child{display:block;width:44px;height:5px;border:1px solid var(--line);border-top:0;border-bottom-color:var(--fiber)}
+  #tNat{margin-left:auto;color:var(--fiber)}
   .note{font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:var(--dim);opacity:.75;margin:6px 0 0}
 
-  .console{display:flex;flex-direction:column;gap:11px;min-width:min(292px,88vw)}
+  .console{display:flex;flex-direction:column;gap:11px;min-width:min(292px,88vw);max-height:calc(100vh - 128px);overflow-y:auto;overscroll-behavior:contain;pointer-events:auto}
   .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
   .seg{display:flex;border:1px solid var(--line)}
   .seg button{flex:1;appearance:none;background:transparent;border:0;border-right:1px solid var(--line);color:var(--dim);font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.06em;padding:9px 4px;cursor:pointer;transition:color .15s,background .15s}
@@ -148,14 +149,14 @@
         <dt class="wide">Elevation</dt><dd class="wide"><span id="tEl">11.5</span><i>°</i></dd>
         <dt class="wide">Soma Ø</dt><dd class="wide"><span id="tSoma">10.4</span><i>µm</i></dd>
         <dt class="wide">Neurite Ø</dt><dd class="wide"><span id="tFib">3.4</span><i>µm</i></dd>
-        <dt>Spikes</dt><dd><span id="tHz">6.0</span><i>Hz</i></dd>
+        <dt class="wide">Spikes</dt><dd class="wide"><span id="tHz">6.0</span><i>Hz</i></dd>
         <dt class="wide">Field</dt><dd class="wide"><b id="tMorph">Morph</b></dd>
         <dt class="wide">Steps/px</dt><dd class="wide"><span id="tSteps">88</span></dd>
         <dt>Rate</dt><dd><span id="tFps">60</span><i>fps</i></dd>
-        <dt class="wide">Render</dt><dd class="wide"><span id="tRes">0×0</span></dd>
+        <dt>Render</dt><dd><span id="tRes">0×0</span></dd>
       </dl>
       <div class="rule"></div>
-      <div class="scalebar"><span></span><span id="tScale">19 µm</span></div>
+      <div class="scalebar"><span></span><span id="tScale">19 µm</span><span id="tNat">1.00× native</span></div>
       <p class="note">Synthetic field — not anatomical data</p>
     </section>
 
@@ -179,6 +180,22 @@
         <label class="lbl" for="density">Cell density</label><output id="densityOut">19 µm pitch</output>
         <input id="density" type="range" min="9" max="22" step="0.5" value="15">
       </div>
+      <div>
+        <p class="lbl" id="resLbl">Resolution</p>
+        <div class="seg" role="group" aria-labelledby="resLbl">
+          <button type="button" data-res="0" aria-pressed="true">Auto</button>
+          <button type="button" data-res="1" aria-pressed="false">Half</button>
+          <button type="button" data-res="2" aria-pressed="false">Native</button>
+        </div>
+      </div>
+      <div>
+        <p class="lbl" id="aaLbl">Antialiasing</p>
+        <div class="seg" role="group" aria-labelledby="aaLbl">
+          <button type="button" data-aa="0" aria-pressed="false">Off</button>
+          <button type="button" data-aa="1" aria-pressed="true">FXAA</button>
+          <button type="button" data-aa="2" aria-pressed="false">SSAA ×4</button>
+        </div>
+      </div>
       <div class="slider" id="thickRow" hidden>
         <label class="lbl" for="thick">Line width</label><output id="thickOut">11.2 µm</output>
         <input id="thick" type="range" min="6" max="70" step="1" value="28">
@@ -190,7 +207,6 @@
       <div class="transport">
         <button type="button" id="playBtn" aria-pressed="true" title="Camera flight (space)">Flight</button>
         <button type="button" id="morphBtn" aria-pressed="true" title="Animate the field (M)">Morph</button>
-        <button type="button" id="aaBtn" aria-pressed="true" title="Supersampled antialiasing (A)">AA</button>
       </div>
       <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, M, A, F, H</p>
     </section>
@@ -235,6 +251,7 @@ uniform float uMorph;
 uniform float uPulse;
 uniform float uScene;
 uniform float uThick;
+uniform float uSS;
 
 const vec3 FIBER = vec3(0.185, 0.851, 0.753);
 const vec3 SOMA  = vec3(1.000, 0.788, 0.541);
@@ -443,8 +460,8 @@ vec3 bgCol(vec3 rd){
   return mix(vec3(0.010, 0.015, 0.026), vec3(0.020, 0.032, 0.055), rd.y*0.5 + 0.5);
 }
 
-void main(){
-  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / min(uRes.x, uRes.y);
+vec3 render(vec2 fc){
+  vec2 uv = (fc - 0.5*uRes) / min(uRes.x, uRes.y);
   uv.y -= uShift;
   float cr = cos(uRoll), sr = sin(uRoll);
   uv = mat2(cr, -sr, sr, cr) * uv;
@@ -520,11 +537,64 @@ void main(){
   col = col / (1.0 + col);
   col = pow(max(col, 0.0), vec3(0.4545));
 
-  vec2 sv = gl_FragCoord.xy/uRes - 0.5;
+  vec2 sv = fc/uRes - 0.5;
   col *= 1.0 - 0.55 * dot(sv, sv);
-  col += (hash33(vec3(gl_FragCoord.xy, uTime)).x - 0.5) * 0.022;
+  col += (hash33(vec3(fc, uTime)).x - 0.5) * 0.022;
 
-  gl_FragColor = vec4(col, 1.0);
+  return col;
+}
+
+void main(){
+  // rotated-grid supersampling: four rays per pixel, box filtered
+  if(uSS > 1.5){
+    vec3 c = render(gl_FragCoord.xy + vec2( 0.125,  0.375))
+           + render(gl_FragCoord.xy + vec2( 0.375, -0.125))
+           + render(gl_FragCoord.xy + vec2(-0.125, -0.375))
+           + render(gl_FragCoord.xy + vec2(-0.375,  0.125));
+    gl_FragColor = vec4(c * 0.25, 1.0);
+  } else {
+    gl_FragColor = vec4(render(gl_FragCoord.xy), 1.0);
+  }
+}
+</script>
+
+<script type="x-shader/x-fragment" id="fsPost">
+precision mediump float;
+uniform sampler2D uTex;
+uniform vec2  uRes;
+uniform float uFxaa;
+
+const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+
+void main(){
+  vec2 inv = 1.0 / uRes;
+  vec2 uv  = gl_FragCoord.xy * inv;
+  if(uFxaa < 0.5){
+    gl_FragColor = texture2D(uTex, uv);
+    return;
+  }
+  vec3 mC = texture2D(uTex, uv).rgb;
+  vec3 nw = texture2D(uTex, uv + vec2(-1.0, -1.0) * inv).rgb;
+  vec3 ne = texture2D(uTex, uv + vec2( 1.0, -1.0) * inv).rgb;
+  vec3 sw = texture2D(uTex, uv + vec2(-1.0,  1.0) * inv).rgb;
+  vec3 se = texture2D(uTex, uv + vec2( 1.0,  1.0) * inv).rgb;
+  float lM  = dot(mC, LUMA);
+  float lNW = dot(nw, LUMA), lNE = dot(ne, LUMA);
+  float lSW = dot(sw, LUMA), lSE = dot(se, LUMA);
+  float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+  float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+
+  vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
+  float reduce = max((lNW + lNE + lSW + lSE) * 0.03125, 0.0078125);
+  float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
+  dir = clamp(dir * rcp, -8.0, 8.0) * inv;
+
+  vec3 a = 0.5 * (texture2D(uTex, uv + dir * (1.0/3.0 - 0.5)).rgb +
+                  texture2D(uTex, uv + dir * (2.0/3.0 - 0.5)).rgb);
+  vec3 b = a * 0.5 + 0.25 * (texture2D(uTex, uv - dir * 0.5).rgb +
+                             texture2D(uTex, uv + dir * 0.5).rgb);
+  float lB = dot(b, LUMA);
+  gl_FragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
 }
 </script>
 
@@ -560,27 +630,54 @@ void main(){
     return sh;
   }
 
+  var post = document.getElementById("fsPost").textContent;
   var vs = compile(gl.VERTEX_SHADER, VS), fs = compile(gl.FRAGMENT_SHADER, src);
-  if(!vs || !fs){
+  var fsp = compile(gl.FRAGMENT_SHADER, post);
+  if(!vs || !fs || !fsp){
     document.getElementById("fault").style.display = "grid";
     document.getElementById("hud").style.display = "none";
     return;
   }
-  var prog = gl.createProgram();
-  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
-  gl.useProgram(prog);
+  function link(frag){
+    var p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, frag);
+    gl.bindAttribLocation(p, 0, "aPos");   // both programs share attribute slot 0
+    gl.linkProgram(p);
+    return p;
+  }
+  var prog = link(fs), progPost = link(fsp);
 
   var buf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
-  var loc = gl.getAttribLocation(prog, "aPos");
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
   var U = {};
-  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse","uScene","uThick"].forEach(function(n){
+  ["uRes","uTime","uEye","uTgt","uRoll","uScale","uSpike","uSteps","uFov","uShift","uMorph","uPulse","uScene","uThick","uSS"].forEach(function(n){
     U[n] = gl.getUniformLocation(prog, n);
   });
+  var P = {
+    uTex:  gl.getUniformLocation(progPost, "uTex"),
+    uRes:  gl.getUniformLocation(progPost, "uRes"),
+    uFxaa: gl.getUniformLocation(progPost, "uFxaa")
+  };
+
+  // offscreen target: the scene is marched into it, the post pass resolves it
+  var fbo = gl.createFramebuffer();
+  var tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  function sizeTarget(w, h){
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  }
 
   if(window.matchMedia("(pointer:coarse)").matches){
     document.getElementById("hint").textContent = "Drag to steer · pinch to range in";
@@ -593,10 +690,11 @@ void main(){
   var state = {
     mode: 0,
     scene: 0,
-    ss: 1.5,
     thick: 0.028,
-    scaleQ: mobile ? 0.58 : 0.90,
-    dprCap: mobile ? 1.5 : 2.0,
+    scaleQ: mobile ? 0.70 : 0.90,   // 1.0 == one sample per physical device pixel
+    dprCap: 3.0,
+    aa: 1,
+    resPin: 0,
     steps: mobile ? 68 : 104,
     fov: mobile ? 1.15 : 1.30,
     density: 15.0,
@@ -630,11 +728,11 @@ void main(){
     var cw = canvas.clientWidth || window.innerWidth;
     var ch = canvas.clientHeight || window.innerHeight;
     var dpr = Math.min(window.devicePixelRatio || 1, state.dprCap);
-    var q = state.scaleQ * state.ss;
+    var q = state.scaleQ;
     var w = Math.max(2, Math.round(cw * dpr * q));
     var h = Math.max(2, Math.round(ch * dpr * q));
-    // supersampling is the antialiasing: render over budget, let the canvas downscale
-    var maxPx = mobile ? 2.2e6 : 4.2e6;
+    // ceiling is the physical screen; the frame-time controller walks up to it
+    var maxPx = mobile ? 4.2e6 : 9.0e6;
     if(w * h > maxPx){
       var k = Math.sqrt(maxPx / (w * h));
       w = Math.max(2, Math.round(w * k)); h = Math.max(2, Math.round(h * k));
@@ -643,6 +741,7 @@ void main(){
       W = w; H = h;
       canvas.width = W; canvas.height = H;
       gl.viewport(0, 0, W, H);
+      sizeTarget(W, H);
     }
     reframe();
   }
@@ -702,6 +801,7 @@ void main(){
     soma: document.getElementById("tSoma"), fib: document.getElementById("tFib"),
     hz: document.getElementById("tHz"), steps: document.getElementById("tSteps"),
     fps: document.getElementById("tFps"), res: document.getElementById("tRes"),
+    nat: document.getElementById("tNat"),
     scale: document.getElementById("tScale"),
     morph: document.getElementById("tMorph")
   };
@@ -731,6 +831,8 @@ void main(){
     el.steps.textContent = String(Math.round(state.steps));
     el.fps.textContent = (1000 / Math.max(ema, 1)).toFixed(0);
     el.res.textContent = W + "×" + H;
+    var native = (canvas.clientWidth || window.innerWidth) * (window.devicePixelRatio || 1);
+    el.nat.textContent = (W / Math.max(native, 1)).toFixed(2) + "× native";
     el.scale.textContent = state.scene === 1 ? "16 Bézier curves" : Math.round(C * UM_PER_UNIT) + " µm";
   }
 
@@ -748,6 +850,8 @@ void main(){
     resize();
     camera(state.clock);
 
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.useProgram(prog);
     gl.uniform2f(U.uRes, W, H);
     gl.uniform1f(U.uTime, state.clock);
     gl.uniform3f(U.uEye, eye[0], eye[1], eye[2]);
@@ -762,16 +866,29 @@ void main(){
     gl.uniform1f(U.uPulse, state.pClock);
     gl.uniform1f(U.uScene, state.scene);
     gl.uniform1f(U.uThick, state.thick);
+    gl.uniform1f(U.uSS, state.aa === 2 ? 2.0 : 1.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.useProgram(progPost);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(P.uTex, 0);
+    gl.uniform2f(P.uRes, W, H);
+    gl.uniform1f(P.uFxaa, state.aa === 1 ? 1.0 : 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     ema = ema * 0.92 + (dt * 1000) * 0.08;
     frames++; acc += dt;
     // react within a few frames when the field is far too heavy, slowly otherwise
     if(frames >= (ema > 55 ? 4 : 45)){
-      if(ema > 30 && state.scaleQ > 0.34){
+      // a pinned resolution only gives way when the frame time gets untenable
+      if(state.resPin && ema < 120){ /* held */ }
+      else if(ema > 30 && state.scaleQ > 0.34){
         state.scaleQ = Math.max(0.34, state.scaleQ - (ema > 55 ? 0.16 : 0.08));
-      } else if(ema < 15 && state.scaleQ < (mobile ? 0.85 : 1.0)){ state.scaleQ += 0.05; }
+      } else if(ema < 15 && state.scaleQ < 1.0){ state.scaleQ = Math.min(1.0, state.scaleQ + 0.05); }
       if(ema > 42 && state.steps > 48) state.steps -= 8;
+      else if(ema < 13 && state.steps < (mobile ? 68 : 104)) state.steps += 8;
       frames = 0;
     }
     tele += dt;
@@ -891,14 +1008,29 @@ void main(){
   morphBtn.addEventListener("click", function(){ setMorph(!state.morph); morphBtn.blur(); });
   setMorph(state.morph);
 
-  var aaBtn = document.getElementById("aaBtn");
+  var resBtns = document.querySelectorAll("[data-res]");
+  Array.prototype.forEach.call(resBtns, function(btn){
+    btn.addEventListener("click", function(){
+      state.resPin = parseInt(btn.dataset.res, 10);
+      if(state.resPin) state.scaleQ = state.resPin === 1 ? 0.5 : 1.0;
+      Array.prototype.forEach.call(resBtns, function(b){
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+      resize(); telemetry(); btn.blur();
+    });
+  });
+
+  var aaBtns = document.querySelectorAll("[data-aa]");
   function setAA(v){
-    state.ss = v ? 1.5 : 1.0;
-    aaBtn.setAttribute("aria-pressed", v ? "true" : "false");
-    aaBtn.title = (v ? "Drop back to one sample per pixel" : "Supersampled antialiasing") + " (A)";
-    resize(); telemetry();
+    state.aa = v;
+    Array.prototype.forEach.call(aaBtns, function(b){
+      b.setAttribute("aria-pressed", parseInt(b.dataset.aa, 10) === v ? "true" : "false");
+    });
+    telemetry();
   }
-  aaBtn.addEventListener("click", function(){ setAA(state.ss === 1.0); aaBtn.blur(); });
+  Array.prototype.forEach.call(aaBtns, function(btn){
+    btn.addEventListener("click", function(){ setAA(parseInt(btn.dataset.aa, 10)); btn.blur(); });
+  });
 
   // SVGElement has no `hidden` IDL property — set the content attribute
   function showIcon(node, on){
@@ -971,7 +1103,7 @@ void main(){
     if(e.target.tagName === "INPUT") return;
     if(e.code === "Space"){ e.preventDefault(); setRunning(!state.running); }
     if(e.key === "m" || e.key === "M"){ setMorph(!state.morph); }
-    if(e.key === "a" || e.key === "A"){ setAA(state.ss === 1.0); }
+    if(e.key === "a" || e.key === "A"){ setAA((state.aa + 1) % 3); }
     if(e.key === "f" || e.key === "F"){ toggleFullscreen(); }
     if(e.key === "h" || e.key === "H"){ setHud(hud.classList.contains("hidden")); }
   });
