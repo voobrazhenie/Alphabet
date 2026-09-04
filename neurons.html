@@ -151,7 +151,8 @@
         <dt>Spikes</dt><dd><span id="tHz">6.0</span><i>Hz</i></dd>
         <dt class="wide">Field</dt><dd class="wide"><b id="tMorph">Morph</b></dd>
         <dt class="wide">Steps/px</dt><dd class="wide"><span id="tSteps">88</span></dd>
-        <dt>Frame</dt><dd><span id="tMs">16.7</span><i>ms</i></dd>
+        <dt>Rate</dt><dd><span id="tFps">60</span><i>fps</i></dd>
+        <dt class="wide">Render</dt><dd class="wide"><span id="tRes">0×0</span></dd>
       </dl>
       <div class="rule"></div>
       <div class="scalebar"><span></span><span id="tScale">19 µm</span></div>
@@ -189,8 +190,9 @@
       <div class="transport">
         <button type="button" id="playBtn" aria-pressed="true" title="Camera flight (space)">Flight</button>
         <button type="button" id="morphBtn" aria-pressed="true" title="Animate the field (M)">Morph</button>
+        <button type="button" id="aaBtn" aria-pressed="true" title="Supersampled antialiasing (A)">AA</button>
       </div>
-      <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, M, F, H</p>
+      <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, M, A, F, H</p>
     </section>
   </div>
 </div>
@@ -237,6 +239,7 @@ uniform float uThick;
 const vec3 FIBER = vec3(0.185, 0.851, 0.753);
 const vec3 SOMA  = vec3(1.000, 0.788, 0.541);
 const vec3 SPIKE = vec3(0.608, 0.482, 1.000);
+const vec3 RIM   = vec3(0.620, 0.898, 1.000);
 
 float gy(vec3 p){ return dot(sin(p), cos(p.yzx)); }
 
@@ -280,8 +283,22 @@ float spikeAt(vec3 p){
 
 float dot2(vec3 v){ return dot(v, v); }
 
-// exact distance to a quadratic Bezier segment (Quilez) — one primitive, whole cell
-float sdBezier(vec3 p, vec3 A, vec3 B, vec3 C){
+// 3D value noise — two octaves of it perturb the membrane
+float vn(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  f = f*f*(3.0 - 2.0*f);
+  vec2 e = vec2(0.0, 1.0);
+  float a = hash33(i + e.xxx).x, b = hash33(i + e.yxx).x;
+  float c = hash33(i + e.xyx).x, d = hash33(i + e.yyx).x;
+  float g = hash33(i + e.xxy).x, h = hash33(i + e.yxy).x;
+  float k = hash33(i + e.xyy).x, l = hash33(i + e.yyy).x;
+  return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+             mix(mix(g, h, f.x), mix(k, l, f.x), f.y), f.z) - 0.5;
+}
+
+// exact distance to a quadratic Bezier (Quilez), plus the curve parameter so
+// the tube can taper along its length
+float sdBez(vec3 p, vec3 A, vec3 B, vec3 C, out float tOut){
   vec3 a = B - A;
   vec3 b = A - 2.0*B + C + 1e-5;
   vec3 c = a * 2.0;
@@ -299,44 +316,81 @@ float sdBezier(vec3 p, vec3 A, vec3 B, vec3 C){
     vec2 x = (vec2(h, -h) - q) * 0.5;
     vec2 uv = sign(x) * pow(abs(x), vec2(1.0/3.0));
     float t = clamp(uv.x + uv.y - kx, 0.0, 1.0);
+    tOut = t;
     res = dot2(d + (c + b*t)*t);
   } else {
     float z = sqrt(-p1);
     float v = acos(clamp(q / (p1*z*2.0), -1.0, 1.0)) / 3.0;
     float m = cos(v), nn = sin(v) * 1.732050808;
     vec3 t = clamp(vec3(m+m, -nn-m, nn-m)*z - kx, 0.0, 1.0);
-    res = min(dot2(d + (c + b*t.x)*t.x), dot2(d + (c + b*t.y)*t.y));
+    float r1 = dot2(d + (c + b*t.x)*t.x);
+    float r2 = dot2(d + (c + b*t.y)*t.y);
+    tOut = r1 < r2 ? t.x : t.y;
+    res = min(r1, r2);
   }
   return sqrt(res);
 }
 
-// one cell: soma, six dendrites, a daughter branch off each, one long axon
+// a Bezier segment swept by a radius that tapers from r0 to r1
+float tube(vec3 p, vec3 A, vec3 B, vec3 C, float r0, float r1){
+  float t;
+  float d = sdBez(p, A, B, C, t);
+  return d - mix(r0, r1, t);
+}
+
+// one cell: soma, five unequal dendrites, a Y fork on each, a thick axon
 float neuron(vec3 p, out float sd){
   sd = length(p);
   float m = uMorph * 0.5;
   float r = uThick;
-  float d = sd - (0.11 + r);
-  for(int i=0;i<6;i++){
+  float d = sd - (0.165 + r*0.8);
+
+  for(int i=0;i<5;i++){
     float fi = float(i);
-    float ang = fi * 2.39996;
-    float z = 1.0 - (2.0*fi + 1.0) / 6.0;
+    vec3 hh = hash33(vec3(fi*1.7 + 0.3, 3.1, 7.3));
+    float ang = fi * 2.39996 + hh.x*0.7;
+    float z = 1.0 - (2.0*fi + 1.0) / 5.0;
     float rr = sqrt(max(0.0, 1.0 - z*z));
-    vec3 dir = vec3(rr*cos(ang), z, rr*sin(ang));
+    vec3 dir = normalize(vec3(rr*cos(ang), z*0.92 + hh.y*0.30 - 0.15, rr*sin(ang)) + 1e-4);
+    float len = 0.62 + 0.30*hh.z;
+
+    // whole branch, children included, sits inside this sphere — skip it early
+    if(length(p - dir*len*0.9) - (len*1.05 + 0.22) > d) continue;
+
     vec3 sv = normalize(cross(dir, vec3(0.31, 0.79, 0.53)) + 1e-4);
+    vec3 up = normalize(cross(dir, sv));
     float w1 = sin(m*0.61 + fi*1.7), w2 = sin(m*0.47 + fi*2.9);
-    vec3 A = dir * 0.09;
-    vec3 B = dir * 0.50 + sv * (0.22 + 0.10*w1);
-    vec3 C = dir * 0.92 + sv * (0.06 + 0.16*w2) + vec3(0.0, 0.05*w1, 0.0);
-    d = smin(d, sdBezier(p, A, B, C) - r, 0.045);
-    vec3 tip = C - B;
-    vec3 B2 = C + tip * 0.45 - sv * 0.16;
-    vec3 C2 = C + tip * 0.85 - sv * (0.34 + 0.14*w2) + vec3(0.10*w2, 0.0, 0.10*w1);
-    d = smin(d, sdBezier(p, C, B2, C2) - r*0.68, 0.035);
+
+    vec3 A = dir * 0.07;
+    vec3 B = dir * len * 0.55 + sv * (0.20 + 0.10*w1) * len;
+    vec3 C = dir * len + sv * (0.06 + 0.18*w2) * len + up * 0.06 * w1;
+    float rb = r * (1.60 + 0.55*hh.x);   // trunk, thick where it leaves the soma
+    float rm = r * (0.78 + 0.30*hh.y);   // waist at the first bifurcation
+    d = smin(d, tube(p, A, B, C, rb, rm), 0.09);
+
+    vec3 fwd = normalize(C - B + 1e-5);
+    for(int j=0;j<2;j++){
+      float sgn = j == 0 ? 1.0 : -1.0;
+      vec3 off = normalize(sv*sgn*0.85 + up*(0.30*sgn + 0.22*w2) + fwd*0.25);
+      vec3 B2 = C + fwd*0.16*len + off*0.16*len;
+      vec3 C2 = C + fwd*0.30*len + off*0.46*len + up*0.06*w1;
+      d = smin(d, tube(p, C, B2, C2, rm*0.92, rm*(0.34 + 0.22*hh.x)), 0.035);
+    }
   }
-  vec3 ax = vec3(0.0, -0.09, 0.0);
-  d = smin(d, sdBezier(p, ax,
-        vec3(0.30*sin(m*0.40), -0.75, 0.22),
-        vec3(-0.35, -1.28, -0.20 + 0.25*sin(m*0.33))) - r*0.85, 0.05);
+
+  // axon: thicker, straighter, out of the far side
+  d = smin(d, tube(p, vec3(0.0, -0.10, 0.0),
+                      vec3(0.26*sin(m*0.40), -0.70, 0.20),
+                      vec3(-0.32, -1.24, -0.18 + 0.22*sin(m*0.33)),
+                   r*1.5, r*1.05), 0.06);
+
+  // organic membrane: coarse lobes for the silhouette, fine grain for skin
+  float w = 1.0 - clamp(d / 0.085, 0.0, 1.0);
+  if(w > 0.0){
+    float lobe = vn(p * 3.0 + vec3(0.0, m*0.09, 0.0));
+    float skin = vn(p * 24.0);
+    d -= w * ((0.60*r + 0.023) * lobe + (0.14*r + 0.007) * skin);
+  }
   return d;
 }
 
@@ -425,7 +479,7 @@ void main(){
         float d = map(p, sd);
         glow += exp(-38.0 * max(d, 0.0)) * (0.45 + 1.05*spikeAt(p)) * (uScene > 0.5 ? 0.008 : 0.017);
         if(d < 0.0009*t + 0.0005){ hit = 1.0; sdHit = sd; break; }
-        t += d * (uScene > 0.5 ? 0.92 : 0.70);
+        t += d * 0.70;
         steps += 1.0;
         if(t > tFar) break;
       }
@@ -440,7 +494,10 @@ void main(){
         vec3 key = normalize(-rd + vec3(0.30, 0.62, 0.10));
         float dif = max(dot(n, key), 0.0);
         float bak = max(dot(n, -key), 0.0) * 0.28;
-        float fres = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+        float ndv = max(dot(n, -rd), 0.0);
+        float fres = 0.035 + 0.965 * pow(1.0 - ndv, 5.0);
+        vec3 hv = normalize(key - rd);
+        float spec = pow(max(dot(n, hv), 0.0), 48.0);
         float ao = clamp(map(p + n*0.05, dmy) / 0.05, 0.0, 1.0) * 0.72 + 0.28;
         float sp = spikeAt(p);
 
@@ -448,7 +505,9 @@ void main(){
         col += SPIKE * vec3(0.88, 0.84, 1.0) * bak * 0.55;
         col += SPIKE * sp * (0.70 + 2.2*somaMix) * uSpike;
         col += SOMA * somaMix * somaMix * 0.42;
-        col += FIBER * (0.10 + 0.60*fres);
+        col += FIBER * 0.06;
+        col += RIM * fres * (0.62 + 0.80*ao) * (0.85 + 0.55*somaMix);
+        col += RIM * spec * (0.45 + 3.2*fres);
 
         float fog = 1.0 - exp(-(uScene > 0.5 ? 0.22 : 0.52) * max(t - tNear, 0.0));
         col = mix(col, bgCol(rd) * 1.15, fog * 0.78);
@@ -534,6 +593,7 @@ void main(){
   var state = {
     mode: 0,
     scene: 0,
+    ss: 1.5,
     thick: 0.028,
     scaleQ: mobile ? 0.58 : 0.90,
     dprCap: mobile ? 1.5 : 2.0,
@@ -570,8 +630,15 @@ void main(){
     var cw = canvas.clientWidth || window.innerWidth;
     var ch = canvas.clientHeight || window.innerHeight;
     var dpr = Math.min(window.devicePixelRatio || 1, state.dprCap);
-    var w = Math.max(2, Math.round(cw * dpr * state.scaleQ));
-    var h = Math.max(2, Math.round(ch * dpr * state.scaleQ));
+    var q = state.scaleQ * state.ss;
+    var w = Math.max(2, Math.round(cw * dpr * q));
+    var h = Math.max(2, Math.round(ch * dpr * q));
+    // supersampling is the antialiasing: render over budget, let the canvas downscale
+    var maxPx = mobile ? 2.2e6 : 4.2e6;
+    if(w * h > maxPx){
+      var k = Math.sqrt(maxPx / (w * h));
+      w = Math.max(2, Math.round(w * k)); h = Math.max(2, Math.round(h * k));
+    }
     if(w !== W || h !== H){
       W = w; H = h;
       canvas.width = W; canvas.height = H;
@@ -634,7 +701,8 @@ void main(){
     az: document.getElementById("tAz"), el: document.getElementById("tEl"),
     soma: document.getElementById("tSoma"), fib: document.getElementById("tFib"),
     hz: document.getElementById("tHz"), steps: document.getElementById("tSteps"),
-    ms: document.getElementById("tMs"), scale: document.getElementById("tScale"),
+    fps: document.getElementById("tFps"), res: document.getElementById("tRes"),
+    scale: document.getElementById("tScale"),
     morph: document.getElementById("tMorph")
   };
   var MODES = ["Orbit", "Fly-through", "Drift"];
@@ -661,8 +729,9 @@ void main(){
     }
     el.hz.textContent = (state.spike * 11).toFixed(1);
     el.steps.textContent = String(Math.round(state.steps));
-    el.ms.textContent = ema.toFixed(1);
-    el.scale.textContent = state.scene === 1 ? "13 Bézier curves" : Math.round(C * UM_PER_UNIT) + " µm";
+    el.fps.textContent = (1000 / Math.max(ema, 1)).toFixed(0);
+    el.res.textContent = W + "×" + H;
+    el.scale.textContent = state.scene === 1 ? "16 Bézier curves" : Math.round(C * UM_PER_UNIT) + " µm";
   }
 
   function frame(now){
@@ -697,9 +766,11 @@ void main(){
 
     ema = ema * 0.92 + (dt * 1000) * 0.08;
     frames++; acc += dt;
-    if(frames >= 45){
-      if(ema > 30 && state.scaleQ > 0.42){ state.scaleQ = Math.max(0.42, state.scaleQ - 0.08); }
-      else if(ema < 15 && state.scaleQ < (mobile ? 0.85 : 1.0)){ state.scaleQ += 0.05; }
+    // react within a few frames when the field is far too heavy, slowly otherwise
+    if(frames >= (ema > 55 ? 4 : 45)){
+      if(ema > 30 && state.scaleQ > 0.34){
+        state.scaleQ = Math.max(0.34, state.scaleQ - (ema > 55 ? 0.16 : 0.08));
+      } else if(ema < 15 && state.scaleQ < (mobile ? 0.85 : 1.0)){ state.scaleQ += 0.05; }
       if(ema > 42 && state.steps > 48) state.steps -= 8;
       frames = 0;
     }
@@ -820,6 +891,15 @@ void main(){
   morphBtn.addEventListener("click", function(){ setMorph(!state.morph); morphBtn.blur(); });
   setMorph(state.morph);
 
+  var aaBtn = document.getElementById("aaBtn");
+  function setAA(v){
+    state.ss = v ? 1.5 : 1.0;
+    aaBtn.setAttribute("aria-pressed", v ? "true" : "false");
+    aaBtn.title = (v ? "Drop back to one sample per pixel" : "Supersampled antialiasing") + " (A)";
+    resize(); telemetry();
+  }
+  aaBtn.addEventListener("click", function(){ setAA(state.ss === 1.0); aaBtn.blur(); });
+
   // SVGElement has no `hidden` IDL property — set the content attribute
   function showIcon(node, on){
     if(on) node.removeAttribute("hidden"); else node.setAttribute("hidden", "");
@@ -891,6 +971,7 @@ void main(){
     if(e.target.tagName === "INPUT") return;
     if(e.code === "Space"){ e.preventDefault(); setRunning(!state.running); }
     if(e.key === "m" || e.key === "M"){ setMorph(!state.morph); }
+    if(e.key === "a" || e.key === "A"){ setAA(state.ss === 1.0); }
     if(e.key === "f" || e.key === "F"){ toggleFullscreen(); }
     if(e.key === "h" || e.key === "H"){ setHud(hud.classList.contains("hidden")); }
   });
