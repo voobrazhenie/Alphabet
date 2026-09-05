@@ -105,6 +105,7 @@
   .corner button:hover{background:rgba(47,217,192,.12)}
   .corner svg{width:17px;height:17px;display:block;flex:none}
   .corner svg[hidden]{display:none}
+  .corner[hidden]{display:none}
   #fsToggle{width:44px;padding:0}
   #fsToggle[hidden]{display:none}
   .hud.hidden ~ .corner{opacity:.42}
@@ -129,9 +130,15 @@
     .telemetry dd{text-align:left;font-size:12px}
     .telemetry .wide{display:none}
     .rule{margin:7px 0}
-    .console{min-width:0;gap:9px}
+    .console{min-width:0;gap:9px;max-height:calc(100vh - 258px)}
     .seg button{padding:11px 4px}
     .transport button{padding:11px 6px}
+  }
+  @media (min-width:761px){
+    /* both bottom panels sit 100px higher; the console has to give up that
+       much height too, or it overflows and the offset has nothing to push */
+    .foot{margin-bottom:100px}
+    .console{max-height:calc(100vh - 340px)}
   }
   @media (max-height:520px){ .ident h1{font-size:22px} .telemetry .wide{display:none} }
   @media (prefers-reduced-motion:reduce){ .hud.hidden{transition:none} }
@@ -196,20 +203,20 @@
         </div>
       </div>
       <div class="slider" data-only="2" hidden>
-        <label class="lbl" for="lcRelief">Relief</label><output id="lcReliefOut">0.22</output>
-        <input id="lcRelief" type="range" min="0" max="60" step="1" value="22">
+        <label class="lbl" for="lcRelief">Relief</label><output id="lcReliefOut">0.60</output>
+        <input id="lcRelief" type="range" min="0" max="90" step="1" value="60">
       </div>
       <div class="slider" data-only="2" hidden>
-        <label class="lbl" for="lcFreq">Terrain scale</label><output id="lcFreqOut">4.50</output>
-        <input id="lcFreq" type="range" min="60" max="1100" step="10" value="450">
+        <label class="lbl" for="lcFreq">Terrain scale</label><output id="lcFreqOut">4.20</output>
+        <input id="lcFreq" type="range" min="60" max="1100" step="10" value="420">
       </div>
       <div class="slider" data-only="2" hidden>
-        <label class="lbl" for="lcThick">Slab thickness</label><output id="lcThickOut">0.50</output>
-        <input id="lcThick" type="range" min="10" max="240" step="2" value="50">
+        <label class="lbl" for="lcThick">Slab thickness</label><output id="lcThickOut">0.22</output>
+        <input id="lcThick" type="range" min="6" max="240" step="2" value="22">
       </div>
       <div class="slider" data-only="2" hidden>
-        <label class="lbl" for="lcTwirl">Twirl</label><output id="lcTwirlOut">1.10 rad</output>
-        <input id="lcTwirl" type="range" min="0" max="300" step="5" value="110">
+        <label class="lbl" for="lcTwirl">Twirl</label><output id="lcTwirlOut">1.70 rad</output>
+        <input id="lcTwirl" type="range" min="0" max="300" step="5" value="170">
       </div>
       <div class="slider" id="densRow" data-only="0">
         <label class="lbl" for="density">Cell density</label><output id="densityOut">19 µm pitch</output>
@@ -218,18 +225,18 @@
       <div>
         <p class="lbl" id="warpLbl">Domain warp</p>
         <div class="transport" role="group" aria-labelledby="warpLbl">
-          <button type="button" data-warp="0" aria-pressed="false" title="Noise displacement of the whole space">Noise</button>
+          <button type="button" data-warp="0" aria-pressed="true" title="Noise displacement of the whole space">Noise</button>
           <button type="button" data-warp="1" aria-pressed="false" title="Whirl the space about Y">Twist</button>
           <button type="button" data-warp="2" aria-pressed="false" title="Bend the space about Z">Bend</button>
         </div>
       </div>
       <div class="slider">
-        <label class="lbl" for="warpAmt">Warp strength</label><output id="warpAmtOut">0.30</output>
-        <input id="warpAmt" type="range" min="0" max="100" step="1" value="30">
+        <label class="lbl" for="warpAmt">Warp strength</label><output id="warpAmtOut">0.70</output>
+        <input id="warpAmt" type="range" min="0" max="100" step="1" value="70">
       </div>
       <div class="slider">
-        <label class="lbl" for="warpFreq">Warp scale</label><output id="warpFreqOut">1.60 /unit</output>
-        <input id="warpFreq" type="range" min="30" max="400" step="5" value="160">
+        <label class="lbl" for="warpFreq">Warp scale</label><output id="warpFreqOut">3.55 /unit</output>
+        <input id="warpFreq" type="range" min="30" max="400" step="5" value="355">
       </div>
       <div>
         <p class="lbl" id="resLbl">Resolution</p>
@@ -264,7 +271,7 @@
         <button type="button" id="playBtn" aria-pressed="true" title="Camera flight (space)">Flight</button>
         <button type="button" id="morphBtn" aria-pressed="true" title="Animate the field (M)">Morph</button>
       </div>
-      <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, M, A, F, H</p>
+      <p class="hint" id="hint">Drag to steer · scroll or pinch to range in · space, M, A, F, H, U</p>
     </section>
   </div>
 </div>
@@ -969,11 +976,11 @@ void main(){
     dprCap: 3.0,
     aa: 1,
     resPin: 0,
-    warpAmt: 0.30,
-    warpFreq: 1.60,
-    warpOn: [0, 0, 0],
+    warpAmt: 0.70,
+    warpFreq: 3.55,
+    warpOn: [1, 0, 0],
     lcOn: [1, 1, 1, 1, 1],
-    lcRelief: 0.22, lcFreq: 4.50, lcThick: 0.025, lcTwirl: 1.10,
+    lcRelief: 0.60, lcFreq: 4.20, lcThick: 0.011, lcTwirl: 1.70,
     // structure + accent colour per object: brain, neuron, LiquidChrome
     colors: [["#2FD9C0", "#FFC98A"], ["#2FD9C0", "#FFC98A"], ["#6F93A8", "#FFE3B0"]],
     steps: mobile ? 68 : 104,
@@ -1010,7 +1017,8 @@ void main(){
     if(state.warpOn[2]) K *= Math.sqrt(1 + Math.pow(1.60 * state.warpAmt * R, 2));
     if(state.warpOn[1]) K *= Math.sqrt(1 + Math.pow(1.70 * state.warpAmt * R, 2));
     if(state.warpOn[0]) K *= 1 + 0.55 * state.warpAmt * state.warpFreq * 2.2;
-    return Math.min(K, 2.6);
+    if(state.scene === 2 && state.lcOn[1]) K *= 1 + state.lcRelief * state.lcFreq * 3.0;
+    return Math.min(K, 3.2);
   }
   function marchSteps(){ return Math.min(marchCap, Math.round(state.steps * warpK())); }
 
@@ -1471,9 +1479,20 @@ void main(){
     reframe();
   }
   uiToggle.addEventListener("click", function(){
+    setBare(false);
     setHud(hud.classList.contains("hidden"));
     uiToggle.blur();
   });
+
+  // U strips the page back to the render alone — panels and corner buttons
+  var corner = document.querySelector(".corner");
+  var bare = false;
+  function setBare(v){
+    if(bare === v) return;
+    bare = v;
+    corner.hidden = v;
+    setHud(!v);
+  }
 
   setHud(true);
 
@@ -1526,7 +1545,8 @@ void main(){
     if(e.key === "m" || e.key === "M"){ setMorph(!state.morph); }
     if(e.key === "a" || e.key === "A"){ setAA((state.aa + 1) % 3); }
     if(e.key === "f" || e.key === "F"){ toggleFullscreen(); }
-    if(e.key === "h" || e.key === "H"){ setHud(hud.classList.contains("hidden")); }
+    if(e.key === "h" || e.key === "H"){ setBare(false); setHud(hud.classList.contains("hidden")); }
+    if(e.key === "u" || e.key === "U"){ setBare(!bare); }
   });
 
   canvas.addEventListener("webglcontextlost", function(e){ e.preventDefault(); });
