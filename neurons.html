@@ -218,7 +218,7 @@
       <div>
         <p class="lbl" id="warpLbl">Domain warp</p>
         <div class="transport" role="group" aria-labelledby="warpLbl">
-          <button type="button" data-warp="0" aria-pressed="true" title="Noise displacement of the whole space">Noise</button>
+          <button type="button" data-warp="0" aria-pressed="false" title="Noise displacement of the whole space">Noise</button>
           <button type="button" data-warp="1" aria-pressed="false" title="Whirl the space about Y">Twist</button>
           <button type="button" data-warp="2" aria-pressed="false" title="Bend the space about Z">Bend</button>
         </div>
@@ -697,7 +697,7 @@ vec3 render(vec2 fc){
       float sd = 1e5, sdHit = 1e5, dmy;
       float hit = 0.0, steps = 0.0, d = 1e5, lip = 1.0;
 
-      for(int i=0;i<224;i++){
+      for(int i=0;i<160;i++){
         if(float(i) >= uSteps) break;
         vec3 p = ro + rd*t;
         d = map(p, sd, lip);
@@ -907,13 +907,13 @@ void main(){
     mode: 0,
     scene: 0,
     thick: 0.028,
-    scaleQ: mobile ? 0.70 : 0.90,   // 1.0 == one sample per physical device pixel
+    scaleQ: 0.34,                   // 1.0 == one sample per physical device pixel
     dprCap: 3.0,
     aa: 1,
     resPin: 0,
     warpAmt: 0.30,
     warpFreq: 1.60,
-    warpOn: [1, 0, 0],
+    warpOn: [0, 0, 0],
     lcOn: [1, 1, 1, 1, 1],
     lcRelief: 0.22, lcFreq: 4.50, lcThick: 0.025, lcTwirl: 1.10,
     // structure + accent colour per object: brain, neuron, LiquidChrome
@@ -954,7 +954,7 @@ void main(){
     if(state.warpOn[0]) K *= 1 + 0.55 * state.warpAmt * state.warpFreq * 2.2;
     return Math.min(K, 2.6);
   }
-  function marchSteps(){ return Math.min(224, Math.round(state.steps * warpK())); }
+  function marchSteps(){ return Math.min(160, Math.round(state.steps * warpK())); }
 
   // keep the field centred in whatever strip the panels leave visible
   function reframe(){
@@ -976,8 +976,10 @@ void main(){
     var q = state.scaleQ;
     var w = Math.max(2, Math.round(cw * dpr * q));
     var h = Math.max(2, Math.round(ch * dpr * q));
-    // ceiling is the physical screen; the frame-time controller walks up to it
-    var maxPx = mobile ? 4.2e6 : 9.0e6;
+    // ceiling is the physical screen; the frame-time controller walks up to it.
+    // Auto stays inside what a per-pixel marcher can sustain; Native is the
+    // user asking for the screen's own resolution, so it keeps the headroom.
+    var maxPx = state.resPin ? (mobile ? 4.2e6 : 9.0e6) : (mobile ? 2.4e6 : 3.0e6);
     if(w * h > maxPx){
       var k = Math.sqrt(maxPx / (w * h));
       w = Math.max(2, Math.round(w * k)); h = Math.max(2, Math.round(h * k));
@@ -987,11 +989,12 @@ void main(){
       canvas.width = W; canvas.height = H;
       gl.viewport(0, 0, W, H);
       sizeTarget(W, H);
+      reframe();
     }
-    reframe();
   }
-  window.addEventListener("resize", resize);
-  window.addEventListener("orientationchange", resize);
+  function relayout(){ resize(); reframe(); }
+  window.addEventListener("resize", relayout);
+  window.addEventListener("orientationchange", relayout);
 
   function pathPoint(u){
     return [1.62*Math.sin(u), 0.52*Math.sin(u*0.73 + 1.1), 1.72*Math.cos(u*0.61)];
@@ -1077,7 +1080,8 @@ void main(){
     }
     el.hz.textContent = (state.spike * 11).toFixed(1);
     el.steps.textContent = String(marchSteps());
-    el.fps.textContent = (1000 / Math.max(ema, 1)).toFixed(0);
+    var fps = 1000 / Math.max(ema, 1);
+    el.fps.textContent = fps < 10 ? fps.toFixed(1) : fps.toFixed(0);
     el.res.textContent = W + "×" + H;
     var native = (canvas.clientWidth || window.innerWidth) * (window.devicePixelRatio || 1);
     el.nat.textContent = (W / Math.max(native, 1)).toFixed(2) + "× native";
@@ -1087,7 +1091,8 @@ void main(){
   }
 
   function frame(now){
-    var dt = Math.min((now - last) / 1000, 0.05);
+    var raw = now - last;                       // true cost of the last frame
+    var dt = Math.min(raw / 1000, 0.05);        // clamped, only for the clocks
     last = now;
     if(state.running) state.clock += dt;
     if(state.morph) state.mClock += dt;
@@ -1139,17 +1144,23 @@ void main(){
     gl.uniform1f(P.uFxaa, state.aa === 1 ? 1.0 : 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    ema = ema * 0.92 + (dt * 1000) * 0.08;
+    // snap up on a spike so one bad frame is enough to trigger a correction
+    ema = raw > ema * 2.0 ? raw : ema * 0.90 + raw * 0.10;
     frames++; acc += dt;
-    // react within a few frames when the field is far too heavy, slowly otherwise
-    if(frames >= (ema > 55 ? 4 : 45)){
+    // correct within a few frames when the frame time is over budget
+    if(frames >= (ema > 34 ? 3 : ema < 13 ? 25 : 40)){
       // a pinned resolution only gives way when the frame time gets untenable
-      if(state.resPin && ema < 120){ /* held */ }
-      else if(ema > 30 && state.scaleQ > 0.34){
-        state.scaleQ = Math.max(0.34, state.scaleQ - (ema > 55 ? 0.16 : 0.08));
-      } else if(ema < 15 && state.scaleQ < 1.0){ state.scaleQ = Math.min(1.0, state.scaleQ + 0.05); }
-      if(ema > 42 && state.steps > 48) state.steps -= 8;
-      else if(ema < 13 && state.steps < (mobile ? 68 : 104)) state.steps += 8;
+      if(state.resPin && ema < 250){ /* held */ }
+      else if(ema > 22 && state.scaleQ > 0.30){
+        // cost is quadratic in the scale, so aim straight at the budget rather
+        // than creeping down 0.08 at a time
+        var k = Math.sqrt(17.0 / ema);
+        state.scaleQ = Math.max(0.30, Math.min(state.scaleQ - 0.04, state.scaleQ * k));
+      } else if(ema < 13 && state.scaleQ < 1.0){
+        state.scaleQ = Math.min(1.0, state.scaleQ * Math.min(1.25, Math.sqrt(15.0 / Math.max(ema, 1))));
+      }
+      if(ema > 40 && state.steps > 44) state.steps -= 8;
+      else if(ema < 12 && state.steps < (mobile ? 68 : 104)) state.steps += 8;
       frames = 0;
     }
     tele += dt;
