@@ -51,3 +51,12 @@ node <script>.mjs   # args: --use-gl=angle --use-angle=swiftshader --enable-unsa
 ```
 
 Always check: all three objects still compile and render, and no page errors.
+
+## The native build
+
+`pc/` is a separate program: the same effect as a Windows app (Rust + wgpu), with
+Vulkan / DirectX 12 / OpenGL as a live switch, the same keys and the same benchmark.
+It is not part of the page and is not published anywhere — a GitHub Actions run
+builds the .exe. `pc/README.md` says how it differs. The shader there is a port of
+the page's, and `pc/tools/parity.mjs` renders both in headless Chromium and compares
+them pixel for pixel; keep it passing when either shader changes.
