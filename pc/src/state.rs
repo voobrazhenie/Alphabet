@@ -287,11 +287,7 @@ impl State {
             let kn = 0.55 * self.warp_amt * self.warp_freq;
             // the object warp's height scales with its own frequency, so its bound
             // does not grow with the scale slider — and it is only paid in the band
-            k *= if self.warp_mode == 0 {
-                1.0 + kn * 2.2
-            } else {
-                1.0 + 0.34 * self.warp_amt
-            };
+            k *= if self.warp_mode == 0 { 1.0 + kn * 2.2 } else { 1.0 + 0.34 * self.warp_amt };
         }
         if self.scene == 2 && self.lc_on[1] {
             k *= 1.0 + self.lc_relief * self.lc_freq * 3.0;
@@ -302,11 +298,7 @@ impl State {
     /// Pinned by hand the slider is the budget; on auto it is scaled by however much
     /// the warp shortens each step.
     pub fn march_steps(&self, cap: f32) -> f32 {
-        let want = if self.steps_pin {
-            self.steps
-        } else {
-            (self.steps * self.warp_k()).round()
-        };
+        let want = if self.steps_pin { self.steps } else { (self.steps * self.warp_k()).round() };
         want.min(cap).max(8.0)
     }
 

@@ -34,11 +34,15 @@ fn to_hlsl(label: &str, module: &naga::Module, info: &naga::valid::ModuleInfo) {
     assert!(src.contains("float"), "{label}: HLSL output looks empty");
 }
 
-fn to_glsl(label: &str, module: &naga::Module, info: &naga::valid::ModuleInfo, stage: naga::ShaderStage, entry: &str) {
-    let opts = back::glsl::Options {
-        version: back::glsl::Version::Desktop(410),
-        ..Default::default()
-    };
+fn to_glsl(
+    label: &str,
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+) {
+    let opts =
+        back::glsl::Options { version: back::glsl::Version::Desktop(410), ..Default::default() };
     let pipeline = back::glsl::PipelineOptions {
         shader_stage: stage,
         entry_point: entry.to_string(),
@@ -46,11 +50,15 @@ fn to_glsl(label: &str, module: &naga::Module, info: &naga::valid::ModuleInfo, s
     };
     let mut src = String::new();
     let mut w = back::glsl::Writer::new(
-        &mut src, module, info, &opts, &pipeline, naga::proc::BoundsCheckPolicies::default(),
+        &mut src,
+        module,
+        info,
+        &opts,
+        &pipeline,
+        naga::proc::BoundsCheckPolicies::default(),
     )
     .unwrap_or_else(|e| panic!("{label}: GLSL (OpenGL) writer failed: {e:?}"));
-    w.write()
-        .unwrap_or_else(|e| panic!("{label}: GLSL (OpenGL) backend failed: {e:?}"));
+    w.write().unwrap_or_else(|e| panic!("{label}: GLSL (OpenGL) backend failed: {e:?}"));
     assert!(src.contains("void main"), "{label}: GLSL output has no entry point");
 }
 
@@ -112,7 +120,8 @@ fn uniform_block_matches_the_rust_struct() {
         "shaders/scene.wgsl and gfx::Uniforms disagree about the uniform block"
     );
 
-    let post = naga::front::wgsl::parse_str(cortical_flythrough::shaderpp::POST_SRC).expect("parse");
+    let post =
+        naga::front::wgsl::parse_str(cortical_flythrough::shaderpp::POST_SRC).expect("parse");
     let pctx = post.to_ctx();
     let (_, pvar) = post
         .global_variables
@@ -144,7 +153,8 @@ fn uniform_fields_line_up() {
     let rust = [
         "res", "time", "roll", "eye", "tgt", "colA", "colB", "warpOn", "lcOn", "scale", "spike",
         "steps", "fov", "shift", "morph", "pulse", "scene", "thick", "warpAmt", "warpFreq",
-        "lcTwirl", "lcRelief", "lcFreq", "lcThick", "eps", "omega", "bound", "boundPad", "warpMode",
+        "lcTwirl", "lcRelief", "lcFreq", "lcThick", "eps", "omega", "bound", "boundPad",
+        "warpMode",
     ];
     assert_eq!(wgsl, rust, "shaders/scene.wgsl uniform members drifted from gfx::Uniforms");
 }

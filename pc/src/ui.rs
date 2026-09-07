@@ -50,7 +50,9 @@ fn seg(ui: &mut egui::Ui, cur: &mut usize, opts: &[&str]) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         for (i, name) in opts.iter().enumerate() {
-            if ui.selectable_label(*cur == i, RichText::new(*name).size(11.0)).clicked() && *cur != i {
+            if ui.selectable_label(*cur == i, RichText::new(*name).size(11.0)).clicked()
+                && *cur != i
+            {
                 *cur = i;
                 changed = true;
             }
@@ -160,7 +162,8 @@ impl App {
                 break;
             }
             let f = 1000.0 / self.hist.ms[k].max(0.5);
-            let col = (((1.0 - age / GRAPH_MS) * (n - 1) as f64) as isize).clamp(0, n as isize - 1) as usize;
+            let col = (((1.0 - age / GRAPH_MS) * (n - 1) as f64) as isize).clamp(0, n as isize - 1)
+                as usize;
             // worst frame wins the column, so a stall cannot hide between samples
             if cols[col] < 0.0 {
                 filled += 1;
@@ -230,7 +233,10 @@ impl App {
         let fill = Color32::from_rgba_premultiplied(12, 55, 49, 90);
         for w in pts.windows(2) {
             p.rect_filled(
-                egui::Rect::from_min_max(egui::pos2(w[0].x, w[0].y), egui::pos2(w[1].x.max(w[0].x + 1.0), y1)),
+                egui::Rect::from_min_max(
+                    egui::pos2(w[0].x, w[0].y),
+                    egui::pos2(w[1].x.max(w[0].x + 1.0), y1),
+                ),
                 0.0,
                 fill,
             );
@@ -354,7 +360,9 @@ impl App {
             toggles(ui, &mut lc, &["1 Slab", "2 Relief", "3 Copy", "4 Intersect", "5 Twirl"]);
             self.st.lc_on = lc;
             slider(ui, "Relief", &mut self.st.lc_relief, 0.0..=0.90, 0.01, |v| format!("{v:.2}"));
-            slider(ui, "Terrain scale", &mut self.st.lc_freq, 0.60..=11.0, 0.10, |v| format!("{v:.2}"));
+            slider(ui, "Terrain scale", &mut self.st.lc_freq, 0.60..=11.0, 0.10, |v| {
+                format!("{v:.2}")
+            });
             slider(ui, "Slab thickness", &mut self.st.lc_thick, 0.003..=0.120, 0.001, |v| {
                 format!("{:.2}", v * 20.0)
             });
@@ -377,14 +385,18 @@ impl App {
             );
         }
         slider(ui, "Surface precision", &mut self.st.eps, 1.0..=12.0, 0.2, |v| format!("{v:.1}"));
-        slider(ui, "Step relaxation", &mut self.st.omega, 1.00..=1.90, 0.02, |v| format!("{v:.2}\u{d7}"));
+        slider(ui, "Step relaxation", &mut self.st.omega, 1.00..=1.90, 0.02, |v| {
+            format!("{v:.2}\u{d7}")
+        });
 
         lbl(ui, "Bounds");
         let mut bound = self.st.bound;
         if seg(ui, &mut bound, &BND_NAME) {
             self.st.bound = bound;
         }
-        slider(ui, "Bound padding", &mut self.st.bound_pad, 0.0..=0.60, 0.01, |v| format!("{v:.2}"));
+        slider(ui, "Bound padding", &mut self.st.bound_pad, 0.0..=0.60, 0.01, |v| {
+            format!("{v:.2}")
+        });
 
         if scene == 0 {
             slider(ui, "Cell density", &mut self.st.density, 9.0..=22.0, 0.5, |v| {
@@ -402,7 +414,9 @@ impl App {
             self.st.warp_mode = wm;
         }
         slider(ui, "Warp strength", &mut self.st.warp_amt, 0.0..=1.0, 0.01, |v| format!("{v:.2}"));
-        slider(ui, "Warp scale", &mut self.st.warp_freq, 0.30..=4.00, 0.05, |v| format!("{v:.2} /unit"));
+        slider(ui, "Warp scale", &mut self.st.warp_freq, 0.30..=4.00, 0.05, |v| {
+            format!("{v:.2} /unit")
+        });
 
         if scene == 1 {
             slider(ui, "Line width", &mut self.st.thick, 0.006..=0.070, 0.001, |v| {
@@ -430,7 +444,8 @@ impl App {
             if ui.selectable_label(self.st.morph, RichText::new("Morph").size(11.0)).clicked() {
                 self.st.morph = !self.st.morph;
             }
-            if ui.selectable_label(self.st.spike_on, RichText::new("Impulses").size(11.0)).clicked() {
+            if ui.selectable_label(self.st.spike_on, RichText::new("Impulses").size(11.0)).clicked()
+            {
                 self.st.spike_on = !self.st.spike_on;
             }
         });
@@ -478,7 +493,10 @@ impl App {
                 let honoured = self.gfx.as_ref().map(|g| g.present_honoured(p)).unwrap_or(true);
                 let r = ui.add_enabled(
                     honoured,
-                    egui::Button::selectable(self.st.present == p, RichText::new(p.label()).size(11.0)),
+                    egui::Button::selectable(
+                        self.st.present == p,
+                        RichText::new(p.label()).size(11.0),
+                    ),
                 );
                 if r.clicked() && self.st.present != p {
                     self.apply_present(p);
@@ -622,7 +640,9 @@ impl App {
                         save = ui.button(RichText::new("Save to file").size(11.0)).clicked();
                     }
                     close = ui
-                        .button(RichText::new(if self.bench.on { "Stop" } else { "Close" }).size(11.0))
+                        .button(
+                            RichText::new(if self.bench.on { "Stop" } else { "Close" }).size(11.0),
+                        )
                         .clicked();
                 });
             });

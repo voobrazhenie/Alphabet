@@ -126,7 +126,8 @@ pub fn camera(st: &State, t: f32) -> Cam {
         let u = t * 0.085;
         let eye = path_point(u);
         let ah = path_point(u + 0.07);
-        let d = rotate_dir([ah[0] - eye[0], ah[1] - eye[1], ah[2] - eye[2]], st.drag_az, st.drag_el);
+        let d =
+            rotate_dir([ah[0] - eye[0], ah[1] - eye[1], ah[2] - eye[2]], st.drag_az, st.drag_el);
         return Cam {
             eye,
             tgt: [eye[0] + d[0], eye[1] + d[1], eye[2] + d[2]],
@@ -175,11 +176,8 @@ pub fn random_view(st: &mut State, cam: &Cam, rng: &mut Rng) {
         let el = (rng.next_f32() * 2.0 - 1.0) * 0.6;
         let d = r * (0.50 + rng.next_f32() * 0.55);
         let ce = el.cos();
-        let mut pos = [
-            tp[0] - d * ce * yaw.sin(),
-            tp[1] - d * el.sin(),
-            tp[2] - d * ce * yaw.cos(),
-        ];
+        let mut pos =
+            [tp[0] - d * ce * yaw.sin(), tp[1] - d * el.sin(), tp[2] - d * ce * yaw.cos()];
         // the chrome slab is thin, so a low camera lands inside its relief
         if st.scene == 2 && pos[1].abs() < 0.45 {
             pos[1] = if pos[1] < 0.0 { -0.45 } else { 0.45 };

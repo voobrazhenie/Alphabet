@@ -8,7 +8,9 @@ use crate::store::{self, Template};
 use std::sync::Arc;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
-use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{
+    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
+};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
@@ -179,7 +181,11 @@ impl App {
         self.toast = Some((msg.into(), Instant::now()));
     }
 
-    fn make_window(&self, el: &ActiveEventLoop, size: Option<winit::dpi::PhysicalSize<u32>>) -> Option<Arc<Window>> {
+    fn make_window(
+        &self,
+        el: &ActiveEventLoop,
+        size: Option<winit::dpi::PhysicalSize<u32>>,
+    ) -> Option<Arc<Window>> {
         let mut attrs = Window::default_attributes().with_title("Cortical Flythrough");
         attrs = match size {
             Some(s) if s.width > 0 && s.height > 0 => attrs.with_inner_size(s),
@@ -274,11 +280,14 @@ impl App {
             self.march_cap = 96.0;
             self.st.steps = self.st.steps.min(56.0);
             self.st.steps_pin = false;
-            self.gfx_note = format!("Software renderer ({}) \u{2014} this will be slow", g.adapter_name);
+            self.gfx_note =
+                format!("Software renderer ({}) \u{2014} this will be slow", g.adapter_name);
         } else {
             self.march_cap = STEPS_MAX;
         }
         self.st.backend = backend;
+        // the title says which API is driving, so a screenshot of a run carries it
+        window.set_title(&format!("Cortical Flythrough \u{2014} {}", backend.label()));
         self.warm = 5;
         self.rw = 0;
         self.rh = 0;
@@ -416,7 +425,10 @@ impl App {
         let rep = self.bench.report(&self.st, &info);
         self.report = Some(if rep.enough {
             ReportView {
-                title: format!("Benchmark \u{b7} {}", if rep.complete { "done" } else { "partial" }),
+                title: format!(
+                    "Benchmark \u{b7} {}",
+                    if rep.complete { "done" } else { "partial" }
+                ),
                 big: format!("{:.1}", rep.avg),
                 unit: "avg fps".into(),
                 body: rep.text.clone(),
@@ -505,7 +517,8 @@ impl App {
         let ppp = egui_ctx.pixels_per_point();
         let jobs = egui_ctx.tessellate(full.shapes, ppp);
 
-        let steps = if self.bench.on { self.bench.steps } else { self.st.march_steps(self.march_cap) };
+        let steps =
+            if self.bench.on { self.bench.steps } else { self.st.march_steps(self.march_cap) };
         let uniforms = crate::gfx::uniforms(&self.st, &self.cam, self.rw, self.rh, steps);
 
         if let Some(g) = &mut self.gfx {
@@ -531,7 +544,13 @@ impl App {
         // correct within a few frames when the frame time is over budget. Never
         // during a run: a controller that changes the resolution or the march budget
         // half way through would be measuring two different things.
-        let trigger = if self.ema > 34.0 { 3 } else if self.ema < 13.0 { 25 } else { 40 };
+        let trigger = if self.ema > 34.0 {
+            3
+        } else if self.ema < 13.0 {
+            25
+        } else {
+            40
+        };
         if !self.bench.on && self.frames >= trigger {
             if self.st.res_pin != 0 && self.ema < 250.0 {
                 // a pinned resolution only gives way when the frame time gets untenable
@@ -811,7 +830,8 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, is_synthetic: false, .. } => {
                 // keys are ignored while a text field has focus
-                if self.egui_ctx.egui_wants_keyboard_input() && event.state == ElementState::Pressed {
+                if self.egui_ctx.egui_wants_keyboard_input() && event.state == ElementState::Pressed
+                {
                     return;
                 }
                 if let PhysicalKey::Code(code) = event.physical_key {

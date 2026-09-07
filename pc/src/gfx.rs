@@ -108,11 +108,7 @@ pub struct Gfx {
 }
 
 impl Gfx {
-    pub fn new(
-        window: Arc<Window>,
-        backend: Backend,
-        present: Present,
-    ) -> Result<Gfx, String> {
+    pub fn new(window: Arc<Window>, backend: Backend, present: Present) -> Result<Gfx, String> {
         let size = window.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
 
@@ -134,7 +130,8 @@ impl Gfx {
         .map_err(|e| format!("{} found no GPU: {e}", backend.label()))?;
 
         let info = adapter.get_info();
-        let adapter_name = if info.name.is_empty() { "unknown".to_string() } else { info.name.clone() };
+        let adapter_name =
+            if info.name.is_empty() { "unknown".to_string() } else { info.name.clone() };
         let driver = format!("{} {}", info.driver, info.driver_info).trim().to_string();
         let is_software = matches!(info.device_type, wgpu::DeviceType::Cpu);
 
@@ -150,12 +147,7 @@ impl Gfx {
 
         let caps = surface.get_capabilities(&adapter);
         // The shader applies its own gamma, so an sRGB surface would apply it twice.
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| !f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+        let format = caps.formats.iter().copied().find(|f| !f.is_srgb()).unwrap_or(caps.formats[0]);
         let present_modes = caps.present_modes.clone();
         let present_mode = pick_present(present, &present_modes);
 
@@ -344,8 +336,7 @@ impl Gfx {
 
     /// True when the driver actually offers the mode that was asked for.
     pub fn present_honoured(&self, p: Present) -> bool {
-        self.present_modes.contains(&p.wgpu())
-            || matches!(p, Present::Vsync) // AutoVsync always resolves to something
+        self.present_modes.contains(&p.wgpu()) || matches!(p, Present::Vsync) // AutoVsync always resolves to something
     }
 
     fn ensure_target(&mut self, rw: u32, rh: u32) {
@@ -368,8 +359,14 @@ impl Gfx {
             layout: &self.post_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: self.post_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         }));
         self.target = Some(tex);
@@ -394,7 +391,13 @@ impl Gfx {
     ) -> Frame {
         let (w, h) = (self.config.width, self.config.height);
         let direct = !fxaa && rw == w && rh == h;
-        self.post_path = if direct { "direct" } else if fxaa { "FXAA" } else { "resolve" };
+        self.post_path = if direct {
+            "direct"
+        } else if fxaa {
+            "FXAA"
+        } else {
+            "resolve"
+        };
         if !direct {
             self.ensure_target(rw, rh);
         }
@@ -431,7 +434,8 @@ impl Gfx {
         }
 
         let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 self.reconfigure();
                 free_textures!();

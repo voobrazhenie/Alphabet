@@ -9,6 +9,12 @@ on:
       - ".github/workflows/pc-windows.yml"
   workflow_dispatch:
 
+# a newer push makes the build in flight pointless — the binary people download
+# should be the one from the newest commit
+concurrency:
+  group: pc-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest

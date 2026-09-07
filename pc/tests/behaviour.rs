@@ -7,7 +7,6 @@ use cortical_flythrough::gfx;
 use cortical_flythrough::state::{Present, State, SCENE_R};
 use std::time::{Duration, Instant};
 
-
 /// The warm-up is 1.5 s of held pose, discarded. Two calls 800 ms apart take a run
 /// past it without consuming any of the 600 measured frames.
 fn past_warmup(b: &mut Bench, st: &mut State, cam: &mut Cam) -> Instant {
@@ -148,7 +147,10 @@ fn a_new_viewpoint_always_looks_at_the_object() {
             let miss = (close[0] * close[0] + close[1] * close[1] + close[2] * close[2]).sqrt();
             assert!(miss < 0.45 * r, "object {scene} is off screen: miss {miss}");
             let dist = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
-            assert!(dist < 1.5 * r, "object {scene}: camera {dist} away, too far to overrun the frame");
+            assert!(
+                dist < 1.5 * r,
+                "object {scene}: camera {dist} away, too far to overrun the frame"
+            );
         }
     }
 }

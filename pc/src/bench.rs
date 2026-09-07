@@ -112,11 +112,9 @@ fn pose(sh: &Shot, u: f32, r: f32) -> Cam {
             let a = a0 + (a1 - a0) * u;
             [a.sin() * rr, y, a.cos() * rr]
         }
-        Path::Line { a, b } => [
-            a[0] + (b[0] - a[0]) * u,
-            a[1] + (b[1] - a[1]) * u,
-            a[2] + (b[2] - a[2]) * u,
-        ],
+        Path::Line { a, b } => {
+            [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u]
+        }
     };
     Cam {
         eye: [e[0] * r, e[1] * r, e[2] * r],
@@ -271,9 +269,7 @@ impl Bench {
         // A display that caps the frame rate measures the display, not the render.
         // Steady frames sitting on a common refresh rate is what that looks like.
         let caps = [30.0, 50.0, 60.0, 75.0, 90.0, 100.0, 120.0, 144.0, 165.0, 240.0];
-        let vsync = caps
-            .iter()
-            .any(|c: &f32| (med - c).abs() / c < 0.03 && low > avg * 0.85);
+        let vsync = caps.iter().any(|c: &f32| (med - c).abs() / c < 0.03 && low > avg * 0.85);
 
         let warps: Vec<&str> = (0..3).filter(|w| st.warp_on[*w]).map(|w| WARP_NAME[w]).collect();
 
