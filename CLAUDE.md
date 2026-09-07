@@ -24,6 +24,10 @@ Two copies are kept in sync and both are pushed on every change:
 
 The page is also published as a Claude artifact at the same URL each time.
 
+`REQUIREMENTS.md` in this repository is the written spec: what every control,
+key, mode and the benchmark actually do. Read it before changing behaviour, and
+update it in the same commit when behaviour changes.
+
 ## Known, not a bug
 
 - **Artifact "403 / not watching"** — after each publish a notice says the
