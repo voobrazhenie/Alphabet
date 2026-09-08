@@ -57,6 +57,14 @@ Always check: all three objects still compile and render, and no page errors.
 `pc/` is a separate program: the same effect as a Windows app (Rust + wgpu), with
 Vulkan / DirectX 12 / OpenGL as a live switch, the same keys and the same benchmark.
 It is not part of the page and is not published anywhere — a GitHub Actions run
-builds the .exe. `pc/README.md` says how it differs. The shader there is a port of
-the page's, and `pc/tools/parity.mjs` renders both in headless Chromium and compares
-them pixel for pixel; keep it passing when either shader changes.
+builds the .exe. `pc/README.md` says how it differs.
+
+**Read `pc/NOTES.md` before changing anything in `pc/`.** It carries what is not
+obvious from the code: how to check a change without a GPU, the decisions that look
+arbitrary and are not (the y flip, the non-sRGB surface, the loop that must not be
+unrollable), the pinned crate versions and their traps, and what has never been run
+on real hardware yet.
+
+The shader there is a port of the page's; `pc/tools/parity.mjs` renders both in
+headless Chromium and compares them pixel for pixel. Keep it passing when either
+shader changes.

@@ -6,6 +6,8 @@ on:
   push:
     paths:
       - "pc/**"
+      # a note or a README does not change the binary, so it does not need a build
+      - "!pc/**.md"
       - ".github/workflows/pc-windows.yml"
   workflow_dispatch:
 
