@@ -97,8 +97,11 @@ Everything below is why a native build is worth having; the picture is the same.
   page's "retry with a shorter march" fallback has nothing left to survive.
 - **One filter step instead of two.** With antialiasing off at Native resolution the
   march writes straight to the screen and the post pass is skipped entirely; the
-  console's *post* readout says which of `direct`, `resolve` or `FXAA` ran.
+  console's *post* readout names whichever chain ran — `direct`, `resolve`, `FXAA`,
+  `upscale`, or a reconstruction with antialiasing after it.
 - **FHD resizes the window** to 1920 × 1080 for real, which a browser tab refuses.
+  In full screen it cannot resize anything, so it marches a literal 1920 × 1080 and
+  the post pass stretches that to the monitor.
 - **The discrete GPU is asked for by name.** On a laptop with switchable graphics the
   binary exports the two symbols the NVIDIA and AMD drivers look for, so it runs on
   the 4070 rather than the integrated chip.
@@ -109,7 +112,12 @@ PATH, and the one built into Windows otherwise. Both work; DXC is quicker to com
 ## Upscaling — and why it is not DLSS
 
 **Upscale** in the post-processing group is the performance lever: the march runs at
-a fraction of the window and the missing pixels are rebuilt.
+a fraction of the size the image is shown at, and the missing pixels are rebuilt.
+
+Today that fraction is measured against the **window**, and it overrides the
+Resolution control while it is on — so FHD + Upscale does not currently give you a
+reconstructed 1920×1080. Making Upscale work off the chosen Resolution instead is
+the next change.
 
 | | | |
 | --- | --- | --- |

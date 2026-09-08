@@ -119,6 +119,67 @@ runs — it just looks wrong, or dies on one backend only.
   comparing with browser numbers — and with older native ones. `tests/behaviour.rs`
   runs the same benchmark at 250 fps and at 36 fps and demands identical poses.
 
+## How a frame is sized
+
+Three sizes decide every frame, and confusing them is where the bugs live.
+
+| | |
+| --- | --- |
+| **window** | `Gfx.config.width/height`, the swapchain. Always the real window, and always what the last post pass writes to. |
+| **base** | what the **Resolution** control asks for: FHD is a literal 1920×1080; Half, Native and Auto are `window × scale_q`. |
+| **marched** | what the shader actually runs at — `rw`/`rh`, the offscreen target's size. |
+
+`App::render_size` returns the marched size, and today it folds base into it and
+returns just the one number:
+
+- **Resolution alone.** Marched = base (× 2 for SSAA), and the post pass stretches
+  that to the window. FHD is the interesting case: it marches a literal 1920×1080
+  whatever the window is, and the stretch to the monitor is the post pass doing its
+  bilinear thing. That is the behaviour the user likes in full screen.
+- **Upscale on.** It **bypasses base entirely** and multiplies the *window*:
+  marched = `window × ratio × ss`, with an early `return` before the Resolution
+  branch is even reached. So FHD + Performance marches half the window, not half of
+  1920×1080, and the console says the upscaler is setting the size.
+- The `max_px` clamps (software renderer, warm-up, Auto) only apply on the
+  Resolution path.
+
+`Gfx::render` is the chain, and it decides its stages from `PostMode` plus
+`then_fxaa`:
+
+| chain | when | stages |
+| --- | --- | --- |
+| `direct` | Resolve, no FXAA, marched == window | march straight to the swapchain, no post pass at all |
+| one pass | anything else without FXAA-after | march → target, then one post pass target → swapchain |
+| two passes | FXAA on top of a resolve or an upscale | march → target, post → **rung**, FXAA rung → swapchain |
+
+The **rung** (`Gfx::mid`) is a window-sized texture that exists only so
+antialiasing has something already-reconstructed to run on. Both post passes share
+one pipeline and differ only in their uniforms, which is why there are two uniform
+buffers (`post_buf`, `post_buf2`) and two bind groups. `out_res` is the size being
+*written*; `texel` is 1 / the size being *read*. Get those two the wrong way round
+and the image is subtly soft rather than obviously broken.
+
+### Next step: make Upscale work off the Resolution, not the window
+
+Agreed with the user and not yet built. Today the upscaler measures itself against
+the window, which makes FHD + Upscale meaningless. It should measure itself against
+**base** instead:
+
+- marched = `base × ratio × ss`
+- the reconstruction pass targets **base**, not the window
+- a final pass stretches base → window, exactly as Resolution alone already does
+
+So in full screen with **FHD + Performance**: march 960×540, reconstruct to
+1920×1080, stretch that to the monitor — the same stretched 1080p look FHD gives
+today, but with the march costing a quarter of it.
+
+The shape of this is already in place: it is the two-pass chain with the rung sized
+to **base** rather than to the window, and the second pass becoming the stretch
+(with FXAA folded into it when antialiasing is on). What has to change is
+`render_size` returning base and marched separately instead of one folded number,
+`ensure_mid` taking base, and the console note that currently says the upscaler owns
+the render size.
+
 ## Versions, and how to survive a bump
 
 Pinned in `Cargo.toml`: **wgpu 30.0, winit 0.30.13, egui / egui-wgpu / egui-winit
