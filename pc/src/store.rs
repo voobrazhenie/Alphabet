@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const TEMPLATES_FILE: &str = "templates.json";
+pub const MIDI_FILE: &str = "midi.json";
 pub const VERSION: u32 = 1;
 
 #[derive(Serialize, Deserialize)]
@@ -33,21 +34,14 @@ pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// `%APPDATA%\CorticalFlythrough` on Windows, `$XDG_CONFIG_HOME/cortical-flythrough`
-/// (or `~/.config/...`) elsewhere. Hand-rolled so the app carries no extra crate for
-/// two environment variables.
+/// The folder the program is running from. Settings live next to the binary rather
+/// than under `%APPDATA%`, so the whole thing — app, settings, templates, mappings —
+/// copies to another machine or a USB stick as one folder and opens on the same
+/// picture. There is no fallback by design: a read-only folder makes saving fail
+/// with a message rather than quietly writing somewhere the user will not find.
 pub fn config_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        std::env::var_os("APPDATA").map(|p| PathBuf::from(p).join("CorticalFlythrough"))
-    }
-    #[cfg(not(windows))]
-    {
-        if let Some(x) = std::env::var_os("XDG_CONFIG_HOME") {
-            return Some(PathBuf::from(x).join("cortical-flythrough"));
-        }
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/cortical-flythrough"))
-    }
+    let exe = std::env::current_exe().ok()?;
+    exe.parent().map(|p| p.to_path_buf())
 }
 
 pub fn settings_path() -> Option<PathBuf> {
@@ -56,6 +50,10 @@ pub fn settings_path() -> Option<PathBuf> {
 
 pub fn templates_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join(TEMPLATES_FILE))
+}
+
+pub fn midi_path() -> Option<PathBuf> {
+    config_dir().map(|d| d.join(MIDI_FILE))
 }
 
 /// Write through a temporary file and rename, so a crash mid-write cannot leave a
@@ -104,6 +102,29 @@ pub fn save_templates(list: &[Template]) -> Result<(), String> {
     let path = templates_path().ok_or("no config directory")?;
     let text = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
     write_atomic(&path, &text)
+}
+
+/// MIDI mappings are their own file, not part of `State`. Loading a template
+/// replaces every setting; it must not also silently re-wire the controller.
+pub fn load_midi() -> Vec<crate::midi::Mapping> {
+    let Some(path) = midi_path() else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+pub fn save_midi(list: &[crate::midi::Mapping]) -> Result<(), String> {
+    let path = midi_path().ok_or("no config directory")?;
+    let text = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+    write_atomic(&path, &text)
+}
+
+pub fn clear_midi() -> Result<(), String> {
+    let path = midi_path().ok_or("no config directory")?;
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Save the report next to the settings, so a run can be kept without the clipboard.

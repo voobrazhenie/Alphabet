@@ -3,6 +3,7 @@
 use crate::bench::{Bench, RunInfo};
 use crate::camera::{self, Cam, Held, Rng};
 use crate::gfx::{EguiFrame, Frame, Gfx, PostMode};
+use crate::midi::{Midi, Out};
 use crate::state::{Backend, Present, Sizes, State, FHD_H, FHD_W, STEPS_MAX};
 use crate::store::{self, Template};
 use std::sync::Arc;
@@ -125,6 +126,7 @@ pub struct App {
     pub(crate) toast: Option<(String, Instant)>,
     pub(crate) report: Option<ReportView>,
     pub(crate) bench: Bench,
+    pub(crate) midi: Midi,
     pub(crate) templates: Vec<Template>,
     pub(crate) tpl_name: String,
     pub(crate) note: String,
@@ -206,6 +208,7 @@ impl App {
             toast: None,
             report: None,
             bench: Bench::default(),
+            midi: Midi::new(store::load_midi()),
             templates,
             tpl_name: String::new(),
             note,
@@ -497,6 +500,21 @@ impl App {
         self.last = now;
         self.hist.push((now - self.start).as_secs_f64() * 1000.0, raw);
 
+        // The controller has its say before the camera is built, so a knob on the
+        // zoom or the steering is in this frame rather than the next one. During a
+        // run it is drained and dropped: the same frames have to come out on every
+        // machine, and a knob moved half way through would measure two pictures.
+        let acts = self.midi.poll(dt, self.bench.on);
+        for a in acts {
+            self.midi_act(a);
+        }
+        if self.midi.dirty {
+            self.midi.dirty = false;
+            if let Err(e) = store::save_midi(&self.midi.maps) {
+                self.note = format!("Could not save the mappings: {e}");
+            }
+        }
+
         // a run drives the camera and the clocks itself, and may hand control back
         // mid-frame when it finishes
         if self.bench.on {
@@ -702,6 +720,9 @@ impl App {
                 self.apply_present(p);
                 self.toast(format!("Present: {}", p.label()));
             }
+            KeyCode::Escape if self.midi.mapping_mode() => {
+                self.midi.learn = crate::midi::Learn::Off;
+            }
             KeyCode::Escape => {
                 if self.bench.on {
                     self.stop_bench();
@@ -745,6 +766,143 @@ impl App {
         }
     }
 
+    /// One mapped message, applied. This is the only place a parameter id turns
+    /// into a field or a call, so `midi::PARAMS` and this `match` are the two halves
+    /// of the same list — an id in one and not the other simply does nothing.
+    fn midi_act(&mut self, out: Out) {
+        match out {
+            Out::Value(id, v) => self.midi_set(id, v),
+            Out::Set(id, on) => self.midi_flag(id, Some(on)),
+            Out::Step(id) => self.midi_step(id),
+            Out::Fire(id) => self.midi_fire(id),
+        }
+    }
+
+    fn midi_set(&mut self, id: &str, v: f32) {
+        let st = &mut self.st;
+        match id {
+            "zoom" => camera::set_zoom(st, v),
+            "fly_speed" => camera::set_fly_speed(st, v),
+            "fly_yaw" => st.fly_yaw = v,
+            "fly_pitch" => st.fly_pitch = v.clamp(-1.553, 1.553),
+            "drag_az" => st.drag_az = v,
+            "drag_el" => st.drag_el = v.clamp(-1.0, 1.0),
+            "lc_relief" => st.lc_relief = v,
+            "lc_freq" => st.lc_freq = v,
+            "lc_thick" => st.lc_thick = v,
+            "lc_twirl" => st.lc_twirl = v,
+            "steps" => {
+                st.steps = v;
+                st.steps_pin = true; // as the slider does: stop the controller trimming it
+            }
+            "eps" => st.eps = v,
+            "omega" => st.omega = v,
+            "bound_pad" => st.bound_pad = v,
+            "density" => st.density = v,
+            "warp_amt" => st.warp_amt = v,
+            "warp_freq" => st.warp_freq = v,
+            "thick" => st.thick = v,
+            "spike" => st.spike = v,
+            "mat_smooth" => st.mat_smooth = v,
+            "mat_metal" => st.mat_metal = v,
+            "sharpen" => st.sharpen = v,
+            "post_exposure" => st.post_exposure = v,
+            "post_glow" => st.post_glow = v,
+            "post_fog" => st.post_fog = v,
+            "post_vignette" => st.post_vignette = v,
+            "post_grain" => st.post_grain = v,
+            // a CC scanning across a segmented control lands on one of its choices
+            "scene" => st.scene = (v as usize).min(2),
+            "mode" => st.mode = (v as usize).min(2),
+            "bound" => st.bound = (v as usize).min(2),
+            "warp_mode" => st.warp_mode = (v as usize).min(1),
+            "aa" => st.aa = (v as usize).min(2),
+            "upscale" => st.upscale = (v as usize).min(3),
+            "res_pin" => {
+                let want = (v as usize).min(3);
+                if want != st.res_pin {
+                    self.set_res(want);
+                }
+            }
+            "fly" => self.midi_flag("fly", Some(v >= 0.5)),
+            _ => self.midi_flag(id, None),
+        }
+    }
+
+    /// The switches. `None` flips whatever is there, which is what a pad does.
+    fn midi_flag(&mut self, id: &str, on: Option<bool>) {
+        let flip = |cur: bool| on.unwrap_or(!cur);
+        match id {
+            "running" => self.st.running = flip(self.st.running),
+            "morph" => self.st.morph = flip(self.st.morph),
+            "spike_on" => self.st.spike_on = flip(self.st.spike_on),
+            "fly" => {
+                let want = flip(self.st.fly);
+                if want != self.st.fly {
+                    let cam = self.cam;
+                    let mut held = self.held;
+                    camera::set_fly(&mut self.st, want, &cam, &mut held);
+                    self.held = held;
+                }
+            }
+            _ => {
+                if let Some(i) = id.strip_prefix("warp_on.").and_then(|n| n.parse::<usize>().ok()) {
+                    if i < 3 {
+                        self.st.warp_on[i] = flip(self.st.warp_on[i]);
+                    }
+                } else if let Some(i) =
+                    id.strip_prefix("lc_on.").and_then(|n| n.parse::<usize>().ok())
+                {
+                    if i < 5 {
+                        self.st.lc_on[i] = flip(self.st.lc_on[i]);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A pad on a segmented control moves it to the next choice and wraps.
+    fn midi_step(&mut self, id: &str) {
+        let n = match crate::midi::find(id).map(|d| d.kind) {
+            Some(crate::midi::Kind::Select(n)) => n,
+            _ => return self.midi_flag(id, None), // a toggle steps by flipping
+        };
+        let cur = match id {
+            "scene" => self.st.scene,
+            "mode" => self.st.mode,
+            "bound" => self.st.bound,
+            "warp_mode" => self.st.warp_mode,
+            "aa" => self.st.aa,
+            "upscale" => self.st.upscale,
+            "res_pin" => self.st.res_pin,
+            _ => return,
+        };
+        self.midi_set(id, ((cur + 1) % n) as f32);
+    }
+
+    /// The things that happen once. Every one of them is something a key already
+    /// does, called the same way, so a pad and a key cannot drift apart.
+    fn midi_fire(&mut self, id: &str) {
+        match id {
+            "cam.random" => {
+                let cam = self.cam;
+                camera::random_view(&mut self.st, &cam, &mut self.rng);
+            }
+            "settings.save" => self.save_default(),
+            _ => {
+                if let Some(i) = id.strip_prefix("fav.recall.").and_then(|n| n.parse().ok()) {
+                    if i < 6 {
+                        self.fav(i, false);
+                    }
+                } else if let Some(i) = id.strip_prefix("fav.store.").and_then(|n| n.parse().ok()) {
+                    if i < 6 {
+                        self.fav(i, true);
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn set_res(&mut self, v: usize) {
         self.st.res_pin = v;
         if v == 1 {
@@ -764,13 +922,16 @@ impl App {
         }
     }
 
+    /// Everything the console can set, and the controller wiring with it — they are
+    /// two files, but one thing to a user pressing ctrl+S.
     pub(crate) fn save_default(&mut self) {
-        match store::save_settings(&self.st) {
-            Ok(p) => {
+        let mapped = store::save_midi(&self.midi.maps);
+        match (store::save_settings(&self.st), mapped) {
+            (Ok(p), Ok(())) => {
                 self.note = format!("Saved {}", p.display());
                 self.toast("Saved as default");
             }
-            Err(e) => {
+            (Err(e), _) | (_, Err(e)) => {
                 self.note = format!("Could not save: {e}");
                 self.toast("Could not save");
             }
@@ -784,8 +945,10 @@ impl App {
         self.st.present = keep.1;
         self.st.fullscreen = keep.2;
         self.st.exclusive = keep.3;
-        match store::clear_settings() {
-            Ok(()) => self.note = "Settings reset".into(),
+        self.midi.maps.clear();
+        self.midi.selected = None;
+        match store::clear_settings().and_then(|()| store::clear_midi()) {
+            Ok(()) => self.note = "Settings and mappings reset".into(),
             Err(e) => self.note = format!("Could not clear the file: {e}"),
         }
         self.toast("Reset");

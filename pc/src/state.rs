@@ -14,8 +14,8 @@ pub const SCENE_R: [f32; 3] = [1.55, 1.15, 1.10];
 
 pub const OBJ_NAME: [&str; 3] = ["Brain", "Neuron", "Chrome"];
 pub const UPSCALE_NAME: [&str; 4] = ["Off", "Quality", "Balanced", "Performance"];
-/// Construction, Object, Post-processing, Rendering, Templates
-pub const GROUPS: usize = 5;
+/// Construction, Camera, Object, Post-processing, Rendering, Templates
+pub const GROUPS: usize = 6;
 pub const RES_NAME: [&str; 4] = ["Auto", "Half", "Native", "FHD"];
 pub const AA_NAME: [&str; 3] = ["Off", "FXAA", "SSAA \u{d7}4"];
 pub const BND_NAME: [&str; 3] = ["Sphere", "Box", "Auto"];

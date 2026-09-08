@@ -9,6 +9,13 @@
   should do. If something is only interesting mechanically, leave it out.
 - End every activity sequence with ✅✅✅.
 
+## What is being worked on
+
+**The desktop app (`pc/`) is the active surface.** The web page is not a priority:
+leave `neurons.html` alone unless asked for it directly. Native-only work — MIDI, the
+camera group, how a frame is sized — does not need a matching page change, and the
+"two copies in sync" rule below is about the page, not about `pc/`.
+
 ## What this project is
 
 `neurons.html` is a single self-contained page: a ray-marched WebGL shader with
@@ -40,7 +47,11 @@ update it in the same commit when behaviour changes.
   done by the user, who then pastes the result here.
 - **No GPU here** — the container renders in software, so frame rates measured
   in this session are meaningless. Correctness can be verified; speed cannot.
-  Say so rather than quoting numbers.
+  Say so rather than quoting numbers. The native app *can* be run headless on
+  software Vulkan to check the console renders — `pc/NOTES.md` has the recipe — but
+  only in a debug build, and never for speed.
+- **No MIDI hardware here** — the mapping arithmetic is unit tested, the device
+  layer cannot be. It is Windows-only code and the container has no controller.
 
 ## Verifying changes
 

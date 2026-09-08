@@ -545,19 +545,23 @@ impl Gfx {
         // egui hands over each texture change exactly once, so the upload has to
         // happen whether or not this frame reaches the screen — a dropped delta
         // leaves the console with no font atlas for the rest of the session.
-        let EguiFrame { jobs, delta, pixels_per_point } = egui_frame;
+        let EguiFrame { jobs, mut delta, pixels_per_point } = egui_frame;
         for (id, images) in &delta.set {
             for image in images {
                 self.egui.update_texture(&self.device, &self.queue, *id, image);
             }
         }
-        // a small helper would borrow all of `self`, so the two lines are written
-        // out at each of the three places the frame can end
+        // Freeing has to happen at each of the three places the frame can end, and
+        // the delta has to be emptied as well as read: `TexturesDelta` asserts on
+        // drop that someone dealt with it, which a debug build turns into a panic on
+        // the very first frame. A helper function would borrow all of `self`, so it
+        // is a macro.
         macro_rules! free_textures {
             () => {
                 for id in &delta.free {
                     self.egui.free_texture(id);
                 }
+                delta.clear();
             };
         }
 

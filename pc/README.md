@@ -48,7 +48,7 @@ Everything the page had, unchanged:
 | `5`–`0` | Recall a viewpoint |
 | `shift`+`5`–`0` | Store a viewpoint |
 | `W A S D Q E`, `shift` | Fly (only while flying) |
-| `Esc` | Close the report, stop a run, or leave full screen |
+| `Esc` | Leave mapping, close the report, stop a run, or leave full screen |
 
 and four that only a native build can have:
 
@@ -56,7 +56,7 @@ and four that only a native build can have:
 | --- | --- |
 | `ctrl+1` `ctrl+2` `ctrl+3` | Vulkan · DirectX 12 · OpenGL, switched live |
 | `V` | Present mode: vsync, mailbox, uncapped |
-| `ctrl+S` | Save as default |
+| `ctrl+S` | Save as default, mappings included |
 | `ctrl+Q` | Quit |
 
 Drag to steer, wheel to range in. In fly mode: right-drag to look, wheel for speed.
@@ -162,11 +162,51 @@ its own, not a switch.
 - **Templates** are the same snapshot under a name. Type a name, press **Save**, and
   it joins the list with **Load** and **×**. Each template carries its own six
   viewpoints, so a template restores a look and the shots that show it off together.
-- **Reset** goes back to the built-in settings and leaves the templates alone.
+- **Reset** goes back to the built-in settings and the MIDI mappings, and leaves the
+  templates alone.
 
-Both live in `%APPDATA%\CorticalFlythrough\` — `settings.json` and `templates.json`.
-Plain JSON: back them up, edit them, copy them to another machine. Benchmark reports
-saved from the report window land in the same folder.
+The **Camera** group in the console holds the same six slots as buttons: click one to
+go there, shift-click to store the view you are on. Range and steering — or speed,
+yaw and pitch in fly mode — are there too, and **New view** is the `R` key. Every one
+of them can be put on a controller.
+
+Everything lives **next to the executable** — `settings.json`, `templates.json` and
+`midi.json` in the folder the `.exe` is in. Copy that folder to a USB stick or
+another machine and it opens on the same picture with the same controller wiring.
+Plain JSON: back them up, edit them. Benchmark reports saved from the report window
+land there too. Put the app somewhere it cannot write, such as `Program Files`, and
+saving says so rather than quietly writing somewhere you will not find it.
+
+## MIDI
+
+Press **MIDI** at the bottom of the console. The window lists every controller that
+is plugged in — several at once is fine, they are picked up on their own, and one
+that is unplugged and plugged back in reattaches to what it was driving.
+
+Mapping works the way Ableton Live's does:
+
+1. Press **Map**. Every control that can be mapped turns red.
+2. Click one. It says it is waiting.
+3. Move a knob or press a pad. That is the mapping.
+4. Press **Map** again, or `Esc`, when you are done.
+
+Each mapping is a card in the window: which channel and CC or note it listens to,
+which control it drives, and for a continuous one a **Min**, a **Max** and a
+**Smoothing** amount. Min above Max is not a mistake — it turns the knob round the
+other way. Smoothing is how long the value takes to catch up, up to half a second; it
+is measured in time, not frames, so a controller feels the same at 30 fps and at 300.
+Click a card and press **Delete** to drop it.
+
+Notes work on continuous controls too: a pad slams a slider between its Min and its
+Max, which with a little smoothing is worth having. Switches, segmented rows and the
+buttons — the six views, **New view**, **Save as default** — take notes, and a note
+does its thing on the way down only. A control that is not on screen cannot be
+mapped, so switch to the object or the camera mode that shows it first.
+
+Mappings are saved with **Save as default** (or `ctrl+S`), and live in `midi.json`
+beside the app. They are deliberately not part of a template: loading a template
+changes every setting, and it should not also re-wire the controller under your
+hands.
 
 ## The surface and the passes after it
 
@@ -198,11 +238,12 @@ allowed.
 | `shaders/scene.wgsl` | The march, ported line by line from the page's `#fs` shader |
 | `shaders/post.wgsl` | FXAA and the plain resolve |
 | `src/gfx.rs` | wgpu: one instance per API, two passes, three lazily built pipelines |
-| `src/state.rs` | Everything the console can set |
+| `src/state.rs` | Everything the console can set, and how a frame is sized |
 | `src/camera.rs` | The three auto paths, free flight, the six slots |
 | `src/bench.rs` | The deterministic run, per `REQUIREMENTS.md` §11 |
-| `src/ui.rs` | The console, the graph and the report |
-| `src/store.rs` | `settings.json` and `templates.json` |
+| `src/ui.rs` | The console, the graph, the report and the MIDI window |
+| `src/midi.rs` | What can be mapped, and what a message does to it |
+| `src/store.rs` | `settings.json`, `templates.json` and `midi.json`, beside the app |
 | `src/shaderpp.rs` | The three-line `//#ifdef` preprocessor WGSL does not have |
 
 ## Checking it

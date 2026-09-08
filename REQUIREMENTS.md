@@ -260,7 +260,7 @@ while it is on, so `A` does not also cycle antialiasing there.
 
 ## 14. Deliberately not done
 
-- No mesh export, no recording, no MIDI or OSC input yet.
+- The page has no mesh export, no recording, and no MIDI or OSC input.
 - No depth-aware upscaling; the resolution control is a straight render scale.
 - The post pass still runs when antialiasing is off (a plain resolve).
 - A pinned resolution can still be given up if the frame time becomes

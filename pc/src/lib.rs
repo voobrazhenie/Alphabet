@@ -4,6 +4,7 @@ pub mod app;
 pub mod bench;
 pub mod camera;
 pub mod gfx;
+pub mod midi;
 pub mod shaderpp;
 pub mod state;
 pub mod store;

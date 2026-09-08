@@ -32,16 +32,42 @@ faults are more likely than rendering faults. The likely suspects, in order:
 4. **DPI.** The app never multiplies by a scale factor — winit's physical size is
    already device pixels — so a display at 125% or 150% should be right, but has
    not been seen.
+5. **MIDI.** `midir` opens a WinMM input per port on a callback thread. None of it
+   has met a controller: the mapping engine is tested, the device layer is not. If
+   a controller is not found, or is found and does nothing, that is the first place
+   to look. Hot-plug is a rescan about once a second, by port name.
+
+It **has** now been watched drawing frames, but only under Xvfb on llvmpipe in this
+container: the console, the camera group and the MIDI window all render and survive,
+which is worth more than nothing and much less than a real GPU. Frame rates measured
+that way are meaningless.
 
 ## Checking a change
 
 Three checks, cheapest first. All of them run without a GPU.
 
 ```
-cargo test                     # shaders, uniforms, benchmark, camera, sizing, settings
+cargo test                     # shaders, uniforms, benchmark, camera, sizing, MIDI, settings
 NODE_PATH=/opt/node22/lib/node_modules node tools/parity.mjs
 cargo check --target x86_64-pc-windows-msvc
+cargo check --target x86_64-pc-windows-gnu    # the only one that compiles midir
 ```
+
+And a fourth, when the console itself has changed — the app will actually run here,
+on Mesa's software Vulkan under a virtual X server:
+
+```
+apt-get install -y libxkbcommon-x11-0 mesa-vulkan-drivers x11-apps   # once
+Xvfb :99 -screen 0 1500x950x24 &
+DISPLAY=:99 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+  ./target/debug/cortical-flythrough --backend vulkan &
+sleep 15 && DISPLAY=:99 xwd -root -silent > shot.xwd
+```
+
+A few frames per second, and the picture means nothing — but it is a real event
+loop, a real device and a real egui pass, and it is what caught the `TexturesDelta`
+panic that made every debug build die on frame one. Run it in **debug**: that panic
+is a `debug_assert`, so a release build hides exactly the kind of fault this is for.
 
 - **`cargo test`** is the one that matters most. `tests/shaders.rs` parses every
   object's WGSL with naga and then runs the **SPIR-V, HLSL and GLSL** backends over
@@ -110,6 +136,11 @@ runs — it just looks wrong, or dies on one backend only.
   egui hands over each change once and never repeats it; drop one and the console
   loses its font atlas for the rest of the session. `Gfx::render` uploads before
   acquiring the swapchain image and frees after submitting.
+- **A `TexturesDelta` has to be emptied, not just read.** `Gfx::render` uploads every
+  `set` and frees every `free`, and then calls `clear()` — the struct asserts on drop
+  that someone dealt with it, and a debug build turns that into a panic on the very
+  first frame. Without the `clear()` the app cannot be run in debug at all, which is
+  how it went unnoticed: CI only builds release.
 - **A new device needs a new egui `Context`.** The renderer lives inside `Gfx`, so
   switching backend throws it away — and the old context would never re-send the
   atlas to the new one. `App::adopt` rebuilds both together.
@@ -167,6 +198,47 @@ FHD still asks the window to become 1920x1080 when it is not full screen
 (`App::set_res`). That is deliberate and unrelated: it is how a windowed FHD gets one
 render pixel per screen pixel. The upscaler no longer cares either way.
 
+## MIDI
+
+`src/midi.rs` is two halves with a hard line between them.
+
+Above the line is arithmetic: `PARAMS` names every mappable control with the range
+its console slider uses, `Mapping` is one wiring, and `Midi::poll` turns messages
+into `Out` values. No I/O, so it is all unit tested here — which matters, because
+this container has neither a controller nor the ALSA headers to build one against.
+
+Below the line is `backend`, and it is **`cfg(windows)` on purpose**. `midir`'s Linux
+path needs ALSA development headers the build container does not have, so an ungated
+dependency would break `cargo test` for everyone working here. On anything but
+Windows the backend is a stub that finds no ports; the half above cannot tell.
+`cargo check --target x86_64-pc-windows-gnu` is what actually compiles the real one.
+
+Three things are load bearing:
+
+- **Mappings live outside `State`.** `reset_default`, `load_template` and
+  `load_web_default` all replace `self.st` wholesale. A template is meant to change
+  every setting; it is not meant to re-wire the controller, so `midi.json` is its own
+  file and its own `App` field.
+- **`PARAMS` and the `match` in `App::midi_set`/`midi_fire` are one list in two
+  places.** An id in the table with no arm is a control that looks mappable and
+  quietly does nothing. Two tests hold them together by reading `ui.rs` and `app.rs`
+  as text — crude, and it catches exactly the drift that matters.
+- **MIDI is dropped, not queued, during a benchmark run.** `Midi::poll` takes a
+  `frozen` flag. Determinism is a contract (`../REQUIREMENTS.md` §11) and a knob moved
+  half way through a run would make it measure two different pictures.
+
+Smoothing is an exponential approach written against elapsed time, not per frame, so
+a mapping settles identically at 20 fps and 200 — the same discipline the animation
+clocks keep, and a test asserts it.
+
+The console's controls became methods on `ui::Ctl`, which carries `&mut Midi`
+alongside the `&mut Ui`. Each call passes `&mut self.st.<field>` separately, so the
+two borrows are disjoint fields of `App`; anything that needs `&mut self` as a whole
+(`set_res`, `fav`) has to be collected as an intent and run after the `Ctl` is
+dropped, which is the same idiom the templates list already used. In map mode `Ctl`
+draws a red target *instead of* the real widget rather than intercepting it, so a
+half-finished drag cannot change a value on the way past.
+
 ## Versions, and how to survive a bump
 
 Pinned in `Cargo.toml`: **wgpu 30.0, winit 0.30.13, egui / egui-wgpu / egui-winit
@@ -205,8 +277,13 @@ no-op rather than a forty-file diff. Keep it that way.
   shader — the page already proves that through ANGLE. If DirectX 12 ever refuses
   to build an object on real hardware, that feature is the first thing to try.
 - **No network, no cloud sync.** The page's Firestore path is not ported and
-  should not be. `settings.json` and `templates.json` are their own format and are
-  *not* interchangeable with the page's saved settings.
+  should not be. `settings.json`, `templates.json` and `midi.json` are their own
+  format, live beside the executable rather than under `%APPDATA%`, and are *not*
+  interchangeable with the page's saved settings. There is no fallback location on
+  purpose: an app in a folder it cannot write says so.
+- **No MIDI out, and no OSC.** Input only, and only what a control surface sends:
+  continuous controllers and notes. Clock, aftertouch, pitch bend and sysex are
+  parsed as "not for us" and dropped.
 - **The GL backend passes no display handle** to `InstanceDescriptor`, which is
   fine on Windows and would need `new_with_display_handle` to work on Wayland.
 - **No installer, no code signing.** SmartScreen warns once on an unsigned binary.
