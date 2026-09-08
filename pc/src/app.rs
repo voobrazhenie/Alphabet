@@ -360,9 +360,12 @@ impl App {
         let (mut w, mut h);
         if let (Some(ratio), true) = (self.st.upscale_ratio(), self.warm <= 0) {
             // The upscaler owns the render size: the whole point is to march
-            // fewer pixels than the window has and rebuild the rest.
-            w = ((win_w as f32 * ratio).round() as u32).max(2);
-            h = ((win_h as f32 * ratio).round() as u32).max(2);
+            // fewer pixels than the window has and rebuild the rest. SSAA still
+            // multiplies it — supersampling means marching more pixels than the
+            // output by definition, and it hands the reconstruction a cleaner
+            // image to work from.
+            w = ((win_w as f32 * ratio).round() as u32 * ss).max(2);
+            h = ((win_h as f32 * ratio).round() as u32 * ss).max(2);
             self.st.fit = if win_h as f32 > win_w as f32 * 1.25 { 0.92 } else { 1.0 };
             return (w, h);
         }
@@ -589,21 +592,25 @@ impl App {
             g.resize_surface(size.width, size.height);
             let scene = self.st.scene;
             g.scene_pipe(scene);
-            // Reconstructing beats antialiasing an image that is already short of
-            // pixels, so the upscaler takes the pass when it is on.
-            let post = if self.st.upscale_ratio().is_some() && self.warm <= 0 {
+            // The upscaler takes the first pass when it is on; FXAA then runs on
+            // what it reconstructed, rather than being switched off by it.
+            let upscaling = self.st.upscale_ratio().is_some() && self.warm <= 0;
+            let fxaa = self.st.aa == 1;
+            let post = if upscaling {
                 PostMode::Upscale
-            } else if self.st.aa == 1 {
+            } else if fxaa {
                 PostMode::Fxaa
             } else {
                 PostMode::Resolve
             };
+            let then_fxaa = fxaa && post != PostMode::Fxaa;
             let outcome = g.render(
                 scene,
                 &uniforms,
                 rw,
                 rh,
                 post,
+                then_fxaa,
                 self.st.sharpen,
                 EguiFrame { jobs, delta: full.textures_delta, pixels_per_point: ppp },
             );

@@ -55,7 +55,8 @@ pub fn style(ctx: &egui::Context) {
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, WHITE);
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, WHITE);
 
-    // pressed and selected read as the inverse: white ground, black text
+    // a momentary press flashes to white with black text; a *selected* control is
+    // an outline instead — see `chip`, which is what the segmented rows use
     v.widgets.active.bg_fill = WHITE;
     v.widgets.active.weak_bg_fill = WHITE;
     v.widgets.active.fg_stroke = Stroke::new(1.0, Color32::BLACK);
@@ -82,14 +83,25 @@ fn lbl(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text.to_uppercase()).size(9.0).color(LABEL).monospace());
 }
 
+/// One button of a row. Selected is drawn as a white outline around white text —
+/// never a white fill, which put white text on white and made the choice
+/// unreadable. Unselected is Klein blue with white text.
+fn chip(ui: &mut egui::Ui, selected: bool, enabled: bool, name: &str) -> egui::Response {
+    let text = RichText::new(name).size(11.0).color(WHITE);
+    let b = if selected {
+        egui::Button::new(text).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.0, WHITE))
+    } else {
+        egui::Button::new(text).fill(KLEIN).stroke(Stroke::new(1.0, KLEIN_LIT))
+    };
+    ui.add_enabled(enabled, b)
+}
+
 /// A row of mutually exclusive buttons, the console's `.seg`.
 fn seg(ui: &mut egui::Ui, cur: &mut usize, opts: &[&str]) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         for (i, name) in opts.iter().enumerate() {
-            if ui.selectable_label(*cur == i, RichText::new(*name).size(11.0)).clicked()
-                && *cur != i
-            {
+            if chip(ui, *cur == i, true, name).clicked() && *cur != i {
                 *cur = i;
                 changed = true;
             }
@@ -103,7 +115,7 @@ fn toggles(ui: &mut egui::Ui, flags: &mut [bool], names: &[&str]) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         for (i, name) in names.iter().enumerate() {
-            if ui.selectable_label(flags[i], RichText::new(*name).size(11.0)).clicked() {
+            if chip(ui, flags[i], true, name).clicked() {
                 flags[i] = !flags[i];
                 changed = true;
             }
@@ -112,21 +124,41 @@ fn toggles(ui: &mut egui::Ui, flags: &mut [bool], names: &[&str]) -> bool {
     changed
 }
 
+/// Pull the leading number out of a reading like "6.0 Hz" or "1.30×", so the value
+/// can be typed as well as dragged.
+fn parse_leading(s: &str) -> Option<f64> {
+    let t = s.trim();
+    let end = t
+        .char_indices()
+        .take_while(|(i, c)| {
+            c.is_ascii_digit() || *c == '.' || (*i == 0 && (*c == '-' || *c == '+'))
+        })
+        .map(|(i, c)| i + c.len_utf8())
+        .last()?;
+    t[..end].parse().ok()
+}
+
+/// A labelled slider whose reading can also be typed into.
+///
+/// Clamping is `Never`: the handle stays inside the range the slider draws, but a
+/// typed value — or a drag on the number itself — goes as far past it as you like.
+/// The ranges are where the control is useful, not where it is allowed.
 fn slider(
     ui: &mut egui::Ui,
     label: &str,
     v: &mut f32,
     range: std::ops::RangeInclusive<f32>,
     step: f64,
-    fmt: impl Fn(f32) -> String,
+    fmt: impl Fn(f32) -> String + 'static,
 ) {
-    ui.horizontal(|ui| {
-        lbl(ui, label);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(RichText::new(fmt(*v)).size(10.0).color(WHITE).monospace());
-        });
-    });
-    ui.add(egui::Slider::new(v, range).step_by(step).show_value(false));
+    lbl(ui, label);
+    ui.add(
+        egui::Slider::new(v, range)
+            .step_by(step)
+            .clamping(egui::SliderClamping::Never)
+            .custom_formatter(move |x, _| fmt(x as f32))
+            .custom_parser(parse_leading),
+    );
 }
 
 impl App {
@@ -324,7 +356,8 @@ impl App {
             egui::Button::new(
                 RichText::new(format!("{mark}  {}", title.to_uppercase())).size(10.0).monospace(),
             )
-            .fill(Color32::from_rgba_premultiplied(47, 217, 192, 18)),
+            .fill(KLEIN_DEEP)
+            .stroke(Stroke::new(1.0, KLEIN_LIT)),
         );
         if r.clicked() {
             *open = !*open;
@@ -347,10 +380,7 @@ impl App {
             .collect();
         ui.horizontal_wrapped(|ui| {
             for i in 0..3 {
-                let r = ui.add_enabled(
-                    available[i],
-                    egui::Button::selectable(scene == i, RichText::new(OBJ_NAME[i]).size(11.0)),
-                );
+                let r = chip(ui, scene == i, available[i], OBJ_NAME[i]);
                 if r.clicked() {
                     scene = i;
                 }
@@ -475,6 +505,19 @@ impl App {
             ui.color_edit_button_rgb(&mut self.st.colors[scene][1]);
         });
 
+        ui.horizontal(|ui| {
+            lbl(ui, "Rim");
+            ui.color_edit_button_rgb(&mut self.st.rim_col);
+            ui.add_space(8.0);
+            lbl(ui, "Back light");
+            ui.color_edit_button_rgb(&mut self.st.spike_col);
+        });
+        ui.label(
+            RichText::new("the rim and the back light carry their own colour \u{2014} set both to black for an object that is only its own colours")
+                .size(9.0)
+                .color(LABEL),
+        );
+
         // NATIVE: the surface itself. The page had one fixed highlight.
         slider(ui, "Smoothness", &mut self.st.mat_smooth, 0.0..=1.0, 0.01, |v| {
             format!("{:.0} gloss", (1.0 + 9.169925 * v).exp2())
@@ -482,14 +525,13 @@ impl App {
         slider(ui, "Metalness", &mut self.st.mat_metal, 0.0..=1.0, 0.01, |v| format!("{v:.2}"));
 
         ui.horizontal_wrapped(|ui| {
-            if ui.selectable_label(self.st.running, RichText::new("Flight").size(11.0)).clicked() {
+            if chip(ui, self.st.running, true, "Flight").clicked() {
                 self.st.running = !self.st.running;
             }
-            if ui.selectable_label(self.st.morph, RichText::new("Morph").size(11.0)).clicked() {
+            if chip(ui, self.st.morph, true, "Morph").clicked() {
                 self.st.morph = !self.st.morph;
             }
-            if ui.selectable_label(self.st.spike_on, RichText::new("Impulses").size(11.0)).clicked()
-            {
+            if chip(ui, self.st.spike_on, true, "Impulses").clicked() {
                 self.st.spike_on = !self.st.spike_on;
             }
         });
@@ -531,7 +573,15 @@ impl App {
             );
         }
 
-        slider(ui, "Exposure", &mut self.st.post_exposure, 0.20..=3.00, 0.01, |v| {
+        ui.horizontal(|ui| {
+            lbl(ui, "Background");
+            ui.color_edit_button_rgb(&mut self.st.bg_low);
+            ui.add_space(8.0);
+            lbl(ui, "toward the sky");
+            ui.color_edit_button_rgb(&mut self.st.bg_high);
+        });
+
+        slider(ui, "Exposure", &mut self.st.post_exposure, 0.20..=6.00, 0.01, |v| {
             format!("{v:.2}\u{d7}")
         });
         slider(ui, "Glow", &mut self.st.post_glow, 0.0..=3.0, 0.01, |v| format!("{v:.2}\u{d7}"));
@@ -566,13 +616,7 @@ impl App {
         lbl(ui, "Graphics API  (ctrl+1/2/3)");
         ui.horizontal_wrapped(|ui| {
             for b in Backend::ALL {
-                let r = ui.add_enabled(
-                    b.available(),
-                    egui::Button::selectable(
-                        self.st.backend == b,
-                        RichText::new(b.label()).size(11.0),
-                    ),
-                );
+                let r = chip(ui, self.st.backend == b, b.available(), b.label());
                 if r.clicked() && self.st.backend != b {
                     self.want_backend = Some(b);
                 }
@@ -582,23 +626,14 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for p in Present::ALL {
                 let honoured = self.gfx.as_ref().map(|g| g.present_honoured(p)).unwrap_or(true);
-                let r = ui.add_enabled(
-                    honoured,
-                    egui::Button::selectable(
-                        self.st.present == p,
-                        RichText::new(p.label()).size(11.0),
-                    ),
-                );
+                let r = chip(ui, self.st.present == p, honoured, p.label());
                 if r.clicked() && self.st.present != p {
                     self.apply_present(p);
                 }
             }
         });
         ui.horizontal_wrapped(|ui| {
-            if ui
-                .selectable_label(self.st.fullscreen, RichText::new("Full screen  F11").size(11.0))
-                .clicked()
-            {
+            if chip(ui, self.st.fullscreen, true, "Full screen  F11").clicked() {
                 let on = !self.st.fullscreen;
                 self.set_fullscreen(on);
             }

@@ -181,6 +181,14 @@ pub struct State {
     pub post_fog: f32,
     pub post_vignette: f32,
     pub post_grain: f32,
+    /// the background gradient, low (looking down) and high (looking up)
+    pub bg_low: [f32; 3],
+    pub bg_high: [f32; 3],
+    /// The two tints the page kept as constants in its lighting, and the reason an
+    /// object with both colours black still was not black: the fresnel rim, and the
+    /// back light that also colours the impulses and half the glow.
+    pub rim_col: [f32; 3],
+    pub spike_col: [f32; 3],
     /// 0 off, else render below the window and reconstruct: 1 quality, 2 balanced,
     /// 3 performance
     pub upscale: usize,
@@ -266,6 +274,10 @@ impl Default for State {
             post_fog: 1.0,
             post_vignette: 0.55,
             post_grain: 0.022,
+            bg_low: [0.010, 0.015, 0.026],
+            bg_high: [0.020, 0.032, 0.055],
+            rim_col: [0.620, 0.898, 1.000],
+            spike_col: [0.608, 0.482, 1.000],
             upscale: 0,
             sharpen: 0.35,
             groups: vec![true; GROUPS],

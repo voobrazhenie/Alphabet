@@ -81,6 +81,10 @@ runs — it just looks wrong, or dies on one backend only.
 - **The offscreen target uses the surface's format**, not a fixed one. That is what
   lets the same pipeline draw either into the target or straight to the screen —
   the `direct` path that skips the post pass when nothing needs resolving.
+- **`parity.mjs` also checks the one thing the page cannot do**: with every colour
+  set to black the ported shader must render black (max channel 0), while the
+  page's still reaches 197 because its rim and back light are constants. If that
+  case starts failing, a tint has been hard-coded again.
 - **The material and post controls must stay no-ops at their defaults.** Every one
   of them (smoothness, metalness, exposure, glow, fog, vignette, grain) replaced a
   constant in the page's shader, and the default reproduces that constant exactly —
@@ -88,8 +92,14 @@ runs — it just looks wrong, or dies on one backend only.
   lets `parity.mjs` keep comparing against the page. Change a default and the
   comparison stops meaning anything.
 - **The upscaler owns the render size when it is on.** `render_size` returns early
-  for it, and the post pass switches to reconstruction; the Resolution buttons are
-  bypassed and the console says so.
+  for it (SSAA still multiplies), and the post pass reconstructs; the Resolution
+  buttons are bypassed and the console says so. FXAA then runs as a *second* pass
+  through a window-sized rung texture — `two_pass` in `Gfx::render`. Both post
+  passes share one pipeline and differ only in their uniforms, which is why there
+  are two uniform buffers and two bind groups rather than one.
+- **The selected state in the console is an outline, never a fill.** A white fill
+  put white text on white; `chip()` in `ui.rs` sets fill and stroke explicitly
+  rather than leaning on egui's selected-widget styling, which is what regressed.
 - **The march loop must stay impossible to unroll.** Its trip count comes from
   `U.steps` through a `clamp`, so no compiler knows it. Put a constant bound back
   and DirectX's older FXC compiler may try to lay 300+ iterations out flat — which

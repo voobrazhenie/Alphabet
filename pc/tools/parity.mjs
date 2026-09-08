@@ -86,6 +86,10 @@ function uniforms(scene, over = {}) {
     postFog: 1.0,
     postVignette: 0.55,
     postGrain: 0.022,
+    bgLow: [0.010, 0.015, 0.026],
+    bgHigh: [0.020, 0.032, 0.055],
+    rimCol: [0.620, 0.898, 1.000],
+    spikeCol: [0.608, 0.482, 1.000],
     ...over,
   };
 }
@@ -112,10 +116,8 @@ const ported = [emit(0), emit(1), emit(2)];
 let worst = 0;
 let failed = 0;
 
-for (const c of CASES) {
-  const u = uniforms(c.scene, c.over);
-  const res = await tab.evaluate(
-    async ([webSrc, portSrc, u, W, H]) => {
+/// Runs in the page: compiles both shaders, renders both, compares them.
+const renderPair = async ([webSrc, portSrc, u, W, H]) => {
       const cv = document.createElement("canvas");
       cv.width = W;
       cv.height = H;
@@ -196,7 +198,7 @@ for (const c of CASES) {
       const vs3 = compile(gl.VERTEX_SHADER, "#version 300 es\nin vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }");
       const pb = link(vs3, compile(gl.FRAGMENT_SHADER, portSrc));
       gl.useProgram(pb);
-      const f = new Float32Array(56);
+      const f = new Float32Array(72);
       f.set(u.res, 0);
       f[2] = u.time;
       f[3] = u.roll;
@@ -216,6 +218,12 @@ for (const c of CASES) {
       // exact no-ops until somebody moves a slider.
       f.set([u.matSmooth, u.matMetal, u.postExposure, u.postGlow], 48);
       f.set([u.postFog, u.postVignette, u.postGrain, 0], 52);
+      // the background gradient and the two lighting tints, at the values the page
+      // hard-coded — the comparison is what keeps them honest
+      f.set([...u.bgLow, 0], 56);
+      f.set([...u.bgHigh, 0], 60);
+      f.set([...u.rimCol, 0], 64);
+      f.set([...u.spikeCol, 0], 68);
       const ubo = gl.createBuffer();
       gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
       gl.bufferData(gl.UNIFORM_BUFFER, f, gl.STATIC_DRAW);
@@ -244,6 +252,13 @@ for (const c of CASES) {
       }
       diffs.sort((p, q) => p - q);
       const n = W * H;
+      const chan = (px) => {
+        let m = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          m = Math.max(m, px[i], px[i + 1], px[i + 2]);
+        }
+        return m;
+      };
       // keep the pair on disk so the picture itself can be looked at
       const png = (px) => {
         const c2 = document.createElement("canvas");
@@ -269,10 +284,14 @@ for (const c of CASES) {
         max,
         over2: (100 * over2) / n,
         lit: (100 * lit) / n,
+        webMax: chan(web),
+        portMax: chan(port),
       };
-    },
-    [DEFS[c.scene] + webFs, ported[c.scene], u, W, H],
-  );
+};
+
+for (const c of CASES) {
+  const u = uniforms(c.scene, c.over);
+  const res = await tab.evaluate(renderPair, [DEFS[c.scene] + webFs, ported[c.scene], u, W, H]);
 
   if (res.error) {
     console.error(`${c.name}: ${res.error}`);
@@ -289,6 +308,31 @@ for (const c of CASES) {
   worst = Math.max(worst, res.mean);
   console.log(
     `${ok ? "ok  " : "FAIL"} ${c.name.padEnd(30)} mean ${res.mean.toFixed(3)}  p99 ${String(res.p99).padStart(3)}  max ${String(res.max).padStart(3)}  >2 ${res.over2.toFixed(2)}%  (object fills ${res.lit.toFixed(1)}% of frame)`,
+  );
+}
+
+// ---- and one thing the page cannot do ---------------------------------------
+// With every colour set to black the object must actually be black. The page's
+// shader carries its rim and back light as constants, so it stays purple; this is
+// the check that those two are really controls now.
+{
+  const u = uniforms(1, {
+    colA: [0, 0, 0],
+    colB: [0, 0, 0],
+    rimCol: [0, 0, 0],
+    spikeCol: [0, 0, 0],
+    bgLow: [0, 0, 0],
+    bgHigh: [0, 0, 0],
+    postGrain: 0,
+  });
+  const res = await tab.evaluate(
+    renderPair,
+    [DEFS[1] + webFs, ported[1], u, W, H],
+  );
+  const ok = res.portMax <= 2;
+  if (!ok) failed++;
+  console.log(
+    `${ok ? "ok  " : "FAIL"} ${"All colours black".padEnd(30)} port max channel ${res.portMax}  (page: ${res.webMax}, which is the tint that had no control)`,
   );
 }
 

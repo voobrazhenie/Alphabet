@@ -120,8 +120,14 @@ a fraction of the window and the missing pixels are rebuilt.
 A per-pixel ray march costs its pixels almost exactly linearly, so Performance is
 close to four times the frames. Reconstruction is a nine-tap Catmull-Rom kernel and
 a sharpen clamped to the neighbourhood it came from, so it cannot ring or halo;
-**Sharpen** sets how hard it pulls. Antialiasing stands down while it is on —
-reconstructing beats antialiasing an image that is already short of pixels.
+**Sharpen** sets how hard it pulls.
+
+**Antialiasing still works with it.** FXAA runs as a second pass, on the
+reconstructed image rather than instead of it, so the edges come out smooth at
+full size. SSAA still means what it says — march more pixels than the output — so
+it multiplies the upscaler's render size and hands the reconstruction a cleaner
+image, at the cost of the saving. The console's *post* readout names whichever
+chain ran.
 
 **This is not literally DLSS, and could not be here.** DLSS is NVIDIA's own
 library: it needs the NGX SDK and its redistributable DLLs, a Vulkan or D3D12
@@ -162,10 +168,19 @@ check in `tools/parity.mjs` is what proves it.
 - **Object modifications** gains **Smoothness** (the width of the highlight, on a
   log scale — 0.5 is the page's) and **Metalness** (a metal drops its diffuse and
   tints what it reflects with the body colour).
-- **Post-processing** collects **Antialiasing**, **Upscale**, **Exposure**,
-  **Glow**, **Fog**, **Vignette** and **Grain** — the last four had no control at
-  all before. Grain is the dither that keeps the gradients from banding; at 0 the
-  banding comes back, which is worth seeing once.
+- **Post-processing** collects **Antialiasing**, **Upscale**, **Background**,
+  **Exposure**, **Glow**, **Fog**, **Vignette** and **Grain** — most of which had
+  no control at all before. Grain is the dither that keeps the gradients from
+  banding; at 0 the banding comes back, which is worth seeing once.
+- **Rim** and **Back light** sit next to the object's own two colours, and they
+  are the answer to "why is my black object purple?". The page's shader carried
+  both tints as constants: the fresnel rim in pale blue, and a violet back light
+  that also colours the impulses and half the glow. Set all four to black and the
+  object really is black — measured, not assumed.
+
+Every slider takes a typed value as well as a dragged one, and typing goes past
+the ends of the slider: the range is where the control is useful, not where it is
+allowed.
 
 ## Layout
 

@@ -48,6 +48,13 @@ struct Uniforms {
   postVignette: f32, // corner falloff
   postGrain: f32,    // the dither that keeps the gradients from banding
   postPad: f32,
+  // The background gradient, and the two tints the page hard-coded into the
+  // lighting. Those two are why an object with both of its colours set to black
+  // was still not black: the rim and the back light carried their own colour.
+  bgLow: vec4f,      // looking down
+  bgHigh: vec4f,     // looking up
+  rimCol: vec4f,     // fresnel rim and the specular highlight
+  spikeCol: vec4f,   // back light, travelling impulses, and half of the glow
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
@@ -59,8 +66,6 @@ struct Uniforms {
 // "retry with a shorter march" workaround exists to survive. The clamp is the only
 // bound: a budget of 0, or a NaN, still leaves the loop finite.
 
-const SPIKE = vec3f(0.608, 0.482, 1.000);
-const RIM   = vec3f(0.620, 0.898, 1.000);
 
 fn gy(p: vec3f) -> f32 { return dot(sin(p), cos(p.yzx)); }
 
@@ -456,7 +461,7 @@ fn calcNormal(p: vec3f) -> vec3f {
 }
 
 fn bgCol(rd: vec3f) -> vec3f {
-  return mix(vec3f(0.010, 0.015, 0.026), vec3f(0.020, 0.032, 0.055), rd.y*0.5 + 0.5);
+  return mix(U.bgLow.xyz, U.bgHigh.xyz, rd.y*0.5 + 0.5);
 }
 
 // ---- bounding volume -------------------------------------------------
@@ -605,15 +610,15 @@ fn render(fc: vec2f) -> vec3f {
       let spec = pow(max(dot(n, hv), 0.0), gloss);
       // A metal has no diffuse of its own and tints what it reflects, so the
       // body colour moves out of the diffuse term and into the highlight.
-      let specCol = mix(RIM, base, U.matMetal);
+      let specCol = mix(U.rimCol.xyz, base, U.matMetal);
       var aoLip = 1.0;
       let ao = clamp(mapLip(p + n*0.05, &dmy, &aoLip) * aoLip * sceneLip() / 0.05, 0.0, 1.0) * 0.72 + 0.28;
       let sp = spikeAt(p);
 
       let body = 1.0 - 0.85 * U.matMetal;   // a metal keeps almost none of its diffuse
       col = base * (0.05 + 0.62*dif) * ao * body;
-      col = col + SPIKE * vec3f(0.88, 0.84, 1.0) * bak * 0.55 * body;
-      col = col + SPIKE * sp * (0.70 + 2.2*somaMix) * U.spike;
+      col = col + U.spikeCol.xyz * vec3f(0.88, 0.84, 1.0) * bak * 0.55 * body;
+      col = col + U.spikeCol.xyz * sp * (0.70 + 2.2*somaMix) * U.spike;
       col = col + U.colB.xyz * somaMix * somaMix * 0.42 * body;
       col = col + U.colA.xyz * 0.06;
       col = col + specCol * fres * (0.62 + 0.80*ao) * (0.85 + 0.55*somaMix);
@@ -624,7 +629,7 @@ fn render(fc: vec2f) -> vec3f {
     }
   }
 
-  col = col + (U.colA.xyz*0.60 + SPIKE*0.40) * glow * (0.55 + 0.70*U.spike) * U.postGlow;
+  col = col + (U.colA.xyz*0.60 + U.spikeCol.xyz*0.40) * glow * (0.55 + 0.70*U.spike) * U.postGlow;
 
   // exposure, then the tone map that folds the highlights back into range, then
   // the gamma the display expects

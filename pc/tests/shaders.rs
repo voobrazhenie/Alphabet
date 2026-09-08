@@ -188,6 +188,10 @@ fn uniform_fields_line_up() {
         "postVignette",
         "postGrain",
         "postPad",
+        "bgLow",
+        "bgHigh",
+        "rimCol",
+        "spikeCol",
     ];
     assert_eq!(wgsl, rust, "shaders/scene.wgsl uniform members drifted from gfx::Uniforms");
 }
