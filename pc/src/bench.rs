@@ -126,6 +126,9 @@ fn pose(sh: &Shot, u: f32, r: f32) -> Cam {
 pub struct RunInfo<'a> {
     pub rw: u32,
     pub rh: u32,
+    /// what the march was rebuilt to: the resolution the console asked for
+    pub bw: u32,
+    pub bh: u32,
     pub win_w: u32,
     pub win_h: u32,
     pub scale_factor: f64,
@@ -278,9 +281,16 @@ impl Bench {
         l.push(String::new());
         l.push(format!("Backend    {} \u{b7} {}", info.backend.label(), info.present.label()));
         l.push(format!("Object     {}", OBJ_NAME[st.scene]));
+        // marched, then what it was rebuilt to when the upscaler is in the way —
+        // two numbers matter now that Upscale divides the chosen resolution
+        let size = if (info.rw, info.rh) == (info.bw, info.bh) {
+            format!("{}\u{d7}{}", info.rw, info.rh)
+        } else {
+            format!("{}\u{d7}{} \u{2192} {}\u{d7}{}", info.rw, info.rh, info.bw, info.bh)
+        };
         l.push(format!(
-            "Render     {} \u{b7} {}\u{d7}{} \u{b7} AA {} \u{b7} post {}",
-            RES_NAME[st.res_pin], info.rw, info.rh, AA_NAME[st.aa], info.post
+            "Render     {} \u{b7} {} \u{b7} AA {} \u{b7} post {}",
+            RES_NAME[st.res_pin], size, AA_NAME[st.aa], info.post
         ));
         l.push(format!(
             "March      {} steps \u{b7} precision {:.1} \u{b7} relax {:.2}",

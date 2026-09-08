@@ -555,7 +555,7 @@ impl App {
             self.st.aa = aa;
         }
 
-        lbl(ui, "Upscale  \u{b7}  march below the window and rebuild");
+        lbl(ui, "Upscale  \u{b7}  march below the resolution and rebuild");
         let mut up = self.st.upscale;
         if seg(ui, &mut up, &UPSCALE_NAME) {
             self.st.upscale = up;
@@ -565,7 +565,7 @@ impl App {
             let pct = self.st.upscale_ratio().unwrap_or(1.0) * 100.0;
             ui.label(
                 RichText::new(format!(
-                    "marching {pct:.0}% of each axis \u{2014} about {:.0}% of the pixels",
+                    "{pct:.0}% of each axis of the chosen resolution \u{2014} about {:.0}% of its pixels",
                     pct * pct / 100.0
                 ))
                 .size(9.0)
@@ -606,10 +606,18 @@ impl App {
         if seg(ui, &mut res, &RES_NAME) {
             self.set_res(res);
         }
-        if self.st.upscale > 0 {
-            ui.label(
-                RichText::new("the upscaler is setting the render size").size(9.0).color(LABEL),
-            );
+        // what the three sizes actually came out at this frame, in the order they
+        // happen: the march, what it is rebuilt to, and the window it is fitted into
+        if self.rw > 0 {
+            let chain = if (self.rw, self.rh) == (self.bw, self.bh) {
+                format!("marching {}\u{d7}{}", self.rw, self.rh)
+            } else {
+                format!(
+                    "marching {}\u{d7}{} \u{2192} {}\u{d7}{}",
+                    self.rw, self.rh, self.bw, self.bh
+                )
+            };
+            ui.label(RichText::new(chain).size(9.0).color(LABEL));
         }
 
         // ---- native only ----

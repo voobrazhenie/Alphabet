@@ -372,3 +372,81 @@ impl State {
         self.colors[self.scene][1]
     }
 }
+
+/// The three sizes a frame is decided by. `base` is what the Resolution control
+/// asks for, `marched` is what the shader actually runs at, and the window — which
+/// the last post pass always writes to — is the caller's own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sizes {
+    pub base: (u32, u32),
+    pub marched: (u32, u32),
+    /// portrait compensation for the camera radius, from the *base* aspect
+    pub fit: f32,
+    /// the march is a fraction of the base and the post pass rebuilds it. Kept as a
+    /// fact rather than recomputed, so the frame loop and the sizing cannot drift
+    /// apart — and it is not `marched != base`, which SSAA also makes true.
+    pub upscaling: bool,
+}
+
+/// How big to march, and what to reconstruct to, for one frame.
+///
+/// Base first, marched second — never the other way round. The upscaler divides the
+/// resolution that was *chosen*, so FHD plus Performance marches half of 1920x1080
+/// rather than half of whatever the window happens to be. That is the whole point of
+/// pinning a resolution while a projector is watching.
+///
+/// `warm` is the first few frames after a start or a backend switch, when neither
+/// FHD nor the upscaler is honoured and the image is kept tiny.
+pub fn frame_size(win: (u32, u32), st: &State, warm: bool, march_cap: f32) -> Sizes {
+    // SSAA marches at 2x per axis and lets the post pass filter it down, so the
+    // budget applies to the marched size, not to what is displayed
+    let ss = if st.aa == 2 { 2 } else { 1 };
+
+    let (mut bw, mut bh);
+    if st.res_pin == 3 && !warm {
+        // FHD is a literal size, and by long-standing intent it escapes the clamps
+        // below: chosen by hand it outranks them.
+        bw = FHD_W;
+        bh = FHD_H;
+    } else {
+        // Half and Native pin the scale; Auto hands it to the frame-time controller.
+        // Either way it is the same field, so a pinned resolution can still be given
+        // up when the frame time becomes untenable.
+        let q = st.scale_q;
+        bw = ((win.0 as f32 * q).round() as u32).max(2);
+        bh = ((win.1 as f32 * q).round() as u32).max(2);
+        let max_px: f32 = if warm {
+            1.1e5
+        } else if march_cap <= 96.0 {
+            4.0e5 // software
+        } else if st.res_pin != 0 {
+            3.4e7 // pinned by hand: let the GPU stretch
+        } else {
+            3.0e6 // auto stays inside what a per-pixel marcher can sustain
+        };
+        let px = (bw * bh * ss * ss) as f32;
+        if px > max_px {
+            let k = (max_px / px).sqrt();
+            bw = (((bw as f32) * k).round() as u32).max(2);
+            bh = (((bh as f32) * k).round() as u32).max(2);
+        }
+    }
+
+    // The upscaler marches a fraction of the base and the post pass rebuilds the
+    // rest. SSAA still multiplies on top — supersampling means marching more pixels
+    // than the output by definition, and it hands the reconstruction a cleaner image
+    // to work from.
+    let ratio = if warm { None } else { st.upscale_ratio() };
+    let (mw, mh) = match ratio {
+        Some(r) => (
+            ((bw as f32 * r).round() as u32 * ss).max(2),
+            ((bh as f32 * r).round() as u32 * ss).max(2),
+        ),
+        None => ((bw * ss).max(2), (bh * ss).max(2)),
+    };
+
+    // The framing follows the picture, which is the base — with FHD the image is
+    // 16:9 however tall the window is.
+    let fit = if bh as f32 > bw as f32 * 1.25 { 0.92 } else { 1.0 };
+    Sizes { base: (bw, bh), marched: (mw, mh), fit, upscaling: ratio.is_some() }
+}

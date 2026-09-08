@@ -38,7 +38,7 @@ faults are more likely than rendering faults. The likely suspects, in order:
 Three checks, cheapest first. All of them run without a GPU.
 
 ```
-cargo test                     # 20 tests: shaders, uniforms, benchmark, camera, settings
+cargo test                     # shaders, uniforms, benchmark, camera, sizing, settings
 NODE_PATH=/opt/node22/lib/node_modules node tools/parity.mjs
 cargo check --target x86_64-pc-windows-msvc
 ```
@@ -91,12 +91,13 @@ runs — it just looks wrong, or dies on one backend only.
   smoothness 0.5 is `exp2(1 + 9.169925*0.5)` = 48 to the last bit. That is what
   lets `parity.mjs` keep comparing against the page. Change a default and the
   comparison stops meaning anything.
-- **The upscaler owns the render size when it is on.** `render_size` returns early
-  for it (SSAA still multiplies), and the post pass reconstructs; the Resolution
-  buttons are bypassed and the console says so. FXAA then runs as a *second* pass
-  through a window-sized rung texture — `two_pass` in `Gfx::render`. Both post
-  passes share one pipeline and differ only in their uniforms, which is why there
-  are two uniform buffers and two bind groups rather than one.
+- **The upscaler divides the base, and the rung is base sized.** `state::frame_size`
+  decides base first and marched second; the first post pass reconstructs to base and
+  a second stretches base to the window — `two_pass` in `Gfx::render`. Size the rung
+  to the window instead and FHD plus Upscale silently stops meaning 1920x1080 again,
+  which is the bug this replaced. Both post passes share one pipeline and differ only
+  in their uniforms, which is why there are two uniform buffers and two bind groups
+  rather than one.
 - **The selected state in the console is an outline, never a fill.** A white fill
   put white text on white; `chip()` in `ui.rs` sets fill and stroke explicitly
   rather than leaning on egui's selected-widget styling, which is what regressed.
@@ -129,56 +130,42 @@ Three sizes decide every frame, and confusing them is where the bugs live.
 | **base** | what the **Resolution** control asks for: FHD is a literal 1920×1080; Half, Native and Auto are `window × scale_q`. |
 | **marched** | what the shader actually runs at — `rw`/`rh`, the offscreen target's size. |
 
-`App::render_size` returns the marched size, and today it folds base into it and
-returns just the one number:
+`state::frame_size` returns all three — it is a plain function of `(window, State,
+warm, march_cap)` with no window handle in sight, which is what makes it testable
+without a GPU. `App::frame_sizes` is a two-line wrapper that also stores `st.fit`.
 
-- **Resolution alone.** Marched = base (× 2 for SSAA), and the post pass stretches
-  that to the window. FHD is the interesting case: it marches a literal 1920×1080
-  whatever the window is, and the stretch to the monitor is the post pass doing its
-  bilinear thing. That is the behaviour the user likes in full screen.
-- **Upscale on.** It **bypasses base entirely** and multiplies the *window*:
-  marched = `window × ratio × ss`, with an early `return` before the Resolution
-  branch is even reached. So FHD + Performance marches half the window, not half of
-  1920×1080, and the console says the upscaler is setting the size.
-- The `max_px` clamps (software renderer, warm-up, Auto) only apply on the
-  Resolution path.
+- **Base.** FHD is a literal 1920x1080 and escapes the `max_px` clamps — chosen by
+  hand it outranks them. Half, Native and Auto are `window x scale_q` and are
+  clamped (software renderer, warm-up, Auto).
+- **Marched.** `base x upscale_ratio x ss`. With no upscaler that is just `base x ss`.
+- **Warm-up.** The first few frames after a start or a backend switch refuse both FHD
+  and the upscaler and clamp hard, so nothing expensive is compiled into frame one.
+- **`fit`** — the portrait compensation the orbit camera applies to its radius — comes
+  from the **base** aspect, not the window. With FHD the picture is 16:9 however tall
+  the window is, so asking the window would frame for a shape that is not being drawn.
 
-`Gfx::render` is the chain, and it decides its stages from `PostMode` plus
-`then_fxaa`:
+`Gfx::render` is the chain, and it decides its stages from `PostMode`, `then_fxaa`
+and whether base is already the window:
 
 | chain | when | stages |
 | --- | --- | --- |
 | `direct` | Resolve, no FXAA, marched == window | march straight to the swapchain, no post pass at all |
-| one pass | anything else without FXAA-after | march → target, then one post pass target → swapchain |
-| two passes | FXAA on top of a resolve or an upscale | march → target, post → **rung**, FXAA rung → swapchain |
+| one pass | base == window and no FXAA after | march → target, then one post pass target → swapchain |
+| two passes | a reconstruction that is not window sized, or FXAA on top of one | march → target, post → **rung**, then rung → swapchain |
 
-The **rung** (`Gfx::mid`) is a window-sized texture that exists only so
-antialiasing has something already-reconstructed to run on. Both post passes share
-one pipeline and differ only in their uniforms, which is why there are two uniform
-buffers (`post_buf`, `post_buf2`) and two bind groups. `out_res` is the size being
-*written*; `texel` is 1 / the size being *read*. Get those two the wrong way round
-and the image is subtly soft rather than obviously broken.
+The **rung** (`Gfx::mid`) is a **base**-sized texture: it is where the reconstruction
+lands before it is fitted to the window, and where antialiasing finds something
+already rebuilt to run on. `out_res` is the size being *written*; `texel` is 1 / the
+size being *read*. Get those two the wrong way round and the image is subtly soft
+rather than obviously broken.
 
-### Next step: make Upscale work off the Resolution, not the window
+So in full screen with **FHD + Performance**: march 960x540, reconstruct to
+1920x1080, stretch that to the monitor — the same stretched 1080p look FHD gives on
+its own, with the march costing a quarter of it.
 
-Agreed with the user and not yet built. Today the upscaler measures itself against
-the window, which makes FHD + Upscale meaningless. It should measure itself against
-**base** instead:
-
-- marched = `base × ratio × ss`
-- the reconstruction pass targets **base**, not the window
-- a final pass stretches base → window, exactly as Resolution alone already does
-
-So in full screen with **FHD + Performance**: march 960×540, reconstruct to
-1920×1080, stretch that to the monitor — the same stretched 1080p look FHD gives
-today, but with the march costing a quarter of it.
-
-The shape of this is already in place: it is the two-pass chain with the rung sized
-to **base** rather than to the window, and the second pass becoming the stretch
-(with FXAA folded into it when antialiasing is on). What has to change is
-`render_size` returning base and marched separately instead of one folded number,
-`ensure_mid` taking base, and the console note that currently says the upscaler owns
-the render size.
+FHD still asks the window to become 1920x1080 when it is not full screen
+(`App::set_res`). That is deliberate and unrelated: it is how a windowed FHD gets one
+render pixel per screen pixel. The upscaler no longer cares either way.
 
 ## Versions, and how to survive a bump
 
@@ -223,8 +210,8 @@ no-op rather than a forty-file diff. Keep it that way.
 - **The GL backend passes no display handle** to `InstanceDescriptor`, which is
   fine on Windows and would need `new_with_display_handle` to work on Wayland.
 - **No installer, no code signing.** SmartScreen warns once on an unsigned binary.
-- **Not DLSS.** The Upscale control renders below the window and reconstructs with
-  a Catmull-Rom kernel and a clamped sharpen. Real DLSS needs NVIDIA's NGX SDK and
+- **Not DLSS.** The Upscale control renders below the chosen resolution and rebuilds
+  it with a Catmull-Rom kernel and a clamped sharpen. Real DLSS needs NVIDIA's NGX SDK and
   its DLLs, a Vulkan/D3D12 device built by hand with extensions wgpu will not let a
   program add, and depth plus motion vectors that a ray march does not produce —
   and it would only exist on one of the three backends, so the comparison would

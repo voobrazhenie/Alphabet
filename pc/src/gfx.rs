@@ -465,46 +465,61 @@ impl Gfx {
 
     /// Draw one frame: the march, then the post pass, then the console over it.
     ///
-    /// `rw`/`rh` is the size the scene is marched at. When it already matches the
-    /// window and no antialiasing is asked for, the march goes straight to the
+    /// `rw`/`rh` is the size the scene is marched at and `base` is what it is meant
+    /// to become — the resolution the console asked for. When the march already
+    /// matches the window and no antialiasing is asked for, it goes straight to the
     /// screen and the post pass is skipped — a full-screen texture round trip the
     /// browser can never avoid.
+    ///
+    /// Otherwise the first post pass writes the *base* image, and a second one
+    /// stretches that to the window, antialiasing it on the way when asked. Two
+    /// passes is what lets the upscaler rebuild 1920x1080 out of 960x540 and only
+    /// then meet the monitor, instead of reconstructing straight to the window and
+    /// making the chosen resolution meaningless.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         scene: usize,
         uniforms: &Uniforms,
         rw: u32,
         rh: u32,
+        base: (u32, u32),
         post: PostMode,
         then_fxaa: bool,
         sharpen: f32,
         egui_frame: EguiFrame,
     ) -> Frame {
         let (w, h) = (self.config.width, self.config.height);
+        let (bw, bh) = base;
         let direct = post == PostMode::Resolve && !then_fxaa && rw == w && rh == h;
-        // Antialiasing after a reconstruction needs the reconstruction to have
-        // somewhere to land first, so that combination is two passes with a
-        // window-sized rung between them.
-        let two_pass = then_fxaa && !direct;
-        self.post_path = match (direct, post, two_pass) {
-            (true, _, _) => "direct",
-            (_, PostMode::Upscale, true) => "upscale+FXAA",
-            (_, PostMode::Resolve, true) => "resolve+FXAA",
-            (_, p, _) => p.label(),
+        // A reconstruction that is not already window sized needs somewhere to land
+        // before it is stretched, and antialiasing after one needs the same rung.
+        // Either way the rung is *base* sized, never window sized.
+        let two_pass = !direct && (then_fxaa || (post == PostMode::Upscale && (bw, bh) != (w, h)));
+        self.post_path = match (direct, post, two_pass, then_fxaa) {
+            (true, ..) => "direct",
+            (_, PostMode::Upscale, _, true) => "upscale+FXAA",
+            (_, PostMode::Resolve, _, true) => "resolve+FXAA",
+            (_, PostMode::Upscale, true, false) => "upscale+fit",
+            (_, p, ..) => p.label(),
         };
         if !direct {
             self.ensure_target(rw, rh);
         }
         if two_pass {
-            self.ensure_mid(w, h);
+            self.ensure_mid(bw, bh);
         }
 
         self.queue.write_buffer(&self.uni_buf, 0, bytemuck::bytes_of(uniforms));
+        // `out_res` is the size being written, `texel` is 1 / the size being read.
+        // The first pass writes the rung when there is one, and the window when the
+        // base already is the window.
+        let (o1w, o1h) = if two_pass { (bw, bh) } else { (w, h) };
         self.queue.write_buffer(
             &self.post_buf,
             0,
             bytemuck::bytes_of(&PostUniforms {
-                out_res: [w as f32, h as f32],
+                out_res: [o1w as f32, o1h as f32],
                 texel: [1.0 / rw as f32, 1.0 / rh as f32],
                 mode: post as u32 as f32,
                 sharpen,
@@ -512,14 +527,15 @@ impl Gfx {
             }),
         );
         if two_pass {
-            // the second pass reads the rung, which is already window sized
+            // the second pass reads the base-sized rung and stretches it to the
+            // window, antialiasing on the way when that was asked for
             self.queue.write_buffer(
                 &self.post_buf2,
                 0,
                 bytemuck::bytes_of(&PostUniforms {
                     out_res: [w as f32, h as f32],
-                    texel: [1.0 / w as f32, 1.0 / h as f32],
-                    mode: PostMode::Fxaa as u32 as f32,
+                    texel: [1.0 / bw as f32, 1.0 / bh as f32],
+                    mode: if then_fxaa { PostMode::Fxaa } else { PostMode::Resolve } as u32 as f32,
                     sharpen: 0.0,
                     pad: [0.0; 2],
                 }),
@@ -613,7 +629,7 @@ impl Gfx {
 
         if two_pass {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("post aa"),
+                label: Some("post fit"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &screen,
                     resolve_target: None,

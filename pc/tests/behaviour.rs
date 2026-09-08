@@ -4,7 +4,7 @@
 use cortical_flythrough::bench::{Bench, FRAMES, SHOTS};
 use cortical_flythrough::camera::{self, Cam, Held, Rng};
 use cortical_flythrough::gfx;
-use cortical_flythrough::state::{Present, State, SCENE_R};
+use cortical_flythrough::state::{frame_size, Present, State, SCENE_R, STEPS_MAX};
 use std::time::{Duration, Instant};
 
 /// The warm-up is 1.5 s of held pose, discarded. Two calls 800 ms apart take a run
@@ -290,14 +290,104 @@ fn a_settings_file_from_an_older_build_still_opens() {
     assert!(st.group_open(4), "a group the file predates opens by default");
 }
 
-/// The upscaler is the render size, so its presets have to mean what they say.
+/// The upscaler divides the resolution that was chosen, not the window. This is the
+/// whole point of pinning FHD while a projector is watching: the picture stays
+/// 1920x1080 and only the march gets cheaper.
 #[test]
-fn the_upscaler_sets_the_render_size() {
+fn the_upscaler_divides_the_chosen_resolution() {
+    let win = (2560, 1440);
     let mut st = State::default();
     assert_eq!(st.upscale_ratio(), None, "off by default");
+
+    // FHD is a literal size whatever the window is
+    st.res_pin = 3;
+    st.aa = 0;
+    let s = frame_size(win, &st, false, STEPS_MAX);
+    assert_eq!(s.base, (1920, 1080));
+    assert_eq!(s.marched, (1920, 1080), "nothing between the march and the base");
+    assert!(!s.upscaling);
+
+    // performance halves each axis of the base, not of the window
     st.upscale = 3;
-    let r = st.upscale_ratio().expect("performance is a ratio");
-    assert!((r - 0.5).abs() < 1e-6, "performance halves each axis");
+    let s = frame_size(win, &st, false, STEPS_MAX);
+    assert_eq!(s.base, (1920, 1080), "the reconstruction still targets FHD");
+    assert_eq!(s.marched, (960, 540), "half of 1920x1080, not half of the window");
+    assert!(s.upscaling);
+
+    // quality keeps most of it
     st.upscale = 1;
-    assert!(st.upscale_ratio().unwrap() > 0.6, "quality marches most of the window");
+    let s = frame_size(win, &st, false, STEPS_MAX);
+    assert_eq!(s.marched, (1281, 720));
+
+    // SSAA multiplies the march and leaves the base alone
+    st.upscale = 3;
+    st.aa = 2;
+    let s = frame_size(win, &st, false, STEPS_MAX);
+    assert_eq!(s.base, (1920, 1080));
+    assert_eq!(s.marched, (1920, 1080), "960x540 supersampled 2x per axis");
+}
+
+/// Half, Native and Auto are all fractions of the window, and the upscaler divides
+/// whichever one of them is live.
+#[test]
+fn the_resolution_control_sets_the_base() {
+    let win = (1600, 900);
+    let mut st = State::default();
+    st.aa = 0;
+
+    for (pin, q, want) in [(1usize, 0.5, (800, 450)), (2, 1.0, (1600, 900))] {
+        st.res_pin = pin;
+        st.scale_q = q;
+        st.upscale = 0;
+        let s = frame_size(win, &st, false, STEPS_MAX);
+        assert_eq!(s.base, want, "res_pin {pin} sets the base");
+        assert_eq!(s.marched, want, "and the march is the base with no upscaler");
+
+        st.upscale = 3;
+        let s = frame_size(win, &st, false, STEPS_MAX);
+        assert_eq!(s.base, want, "the upscaler does not move the base");
+        assert_eq!(s.marched, (want.0 / 2, want.1 / 2), "it halves it");
+    }
+}
+
+/// The clamps that keep a per-pixel marcher inside what it can sustain still bite,
+/// and the warm-up frames still refuse both FHD and the upscaler.
+#[test]
+fn the_clamps_and_the_warm_up_still_hold() {
+    let win = (3840, 2160);
+    let mut st = State::default();
+    st.aa = 0;
+    st.res_pin = 0; // auto
+    st.scale_q = 1.0;
+    let s = frame_size(win, &st, false, STEPS_MAX);
+    // each axis is rounded on its own, so the area lands within a row or two of it
+    assert!((s.base.0 * s.base.1) as f32 <= 3.0e6 * 1.01, "auto stays inside its budget");
+
+    // a software adapter is a much smaller budget
+    let s = frame_size(win, &st, false, 96.0);
+    assert!((s.base.0 * s.base.1) as f32 <= 4.0e5 * 1.01, "software is clamped harder");
+
+    // warming up: FHD and the upscaler both stand down, and the image is tiny
+    st.res_pin = 3;
+    st.upscale = 3;
+    let s = frame_size(win, &st, true, STEPS_MAX);
+    assert_ne!(s.base, (1920, 1080), "FHD waits for the warm-up to finish");
+    assert!(!s.upscaling, "and so does the upscaler");
+    assert!((s.base.0 * s.base.1) as f32 <= 1.1e5 * 1.01);
+}
+
+/// With FHD the picture is 16:9 however tall the window is, so the framing follows
+/// the base and not the window.
+#[test]
+fn the_framing_follows_the_picture() {
+    let portrait = (900, 1600);
+    let mut st = State::default();
+    st.aa = 0;
+
+    st.res_pin = 2; // native: the base is the window, so the window's shape wins
+    st.scale_q = 1.0;
+    assert!(frame_size(portrait, &st, false, STEPS_MAX).fit < 1.0);
+
+    st.res_pin = 3; // FHD: 1920x1080 whatever the window is
+    assert_eq!(frame_size(portrait, &st, false, STEPS_MAX).fit, 1.0);
 }

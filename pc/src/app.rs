@@ -3,7 +3,7 @@
 use crate::bench::{Bench, RunInfo};
 use crate::camera::{self, Cam, Held, Rng};
 use crate::gfx::{EguiFrame, Frame, Gfx, PostMode};
-use crate::state::{Backend, Present, State, FHD_H, FHD_W, STEPS_MAX};
+use crate::state::{Backend, Present, Sizes, State, FHD_H, FHD_W, STEPS_MAX};
 use crate::store::{self, Template};
 use std::sync::Arc;
 use std::time::Instant;
@@ -117,6 +117,9 @@ pub struct App {
     /// what the scene was marched at last frame
     pub(crate) rw: u32,
     pub(crate) rh: u32,
+    /// and what that was reconstructed to: the resolution the console asked for
+    pub(crate) bw: u32,
+    pub(crate) bh: u32,
 
     pub(crate) hud: bool,
     pub(crate) toast: Option<(String, Instant)>,
@@ -197,6 +200,8 @@ impl App {
             march_cap: STEPS_MAX,
             rw: 0,
             rh: 0,
+            bw: 0,
+            bh: 0,
             hud: true,
             toast: None,
             report: None,
@@ -347,56 +352,19 @@ impl App {
         self.warm = 5;
         self.rw = 0;
         self.rh = 0;
+        self.bw = 0;
+        self.bh = 0;
         self.gfx = Some(g);
     }
 
-    /// The size the scene is marched at. The swapchain is always the window; the
-    /// post pass fits one to the other, which is what the browser's canvas scaling
-    /// did on the page.
-    fn render_size(&mut self, win_w: u32, win_h: u32) -> (u32, u32) {
-        // SSAA renders the target at 2x and lets the post pass filter it down, so
-        // the budget applies to that, not to the window
-        let ss = if self.st.aa == 2 { 2 } else { 1 };
-        let (mut w, mut h);
-        if let (Some(ratio), true) = (self.st.upscale_ratio(), self.warm <= 0) {
-            // The upscaler owns the render size: the whole point is to march
-            // fewer pixels than the window has and rebuild the rest. SSAA still
-            // multiplies it — supersampling means marching more pixels than the
-            // output by definition, and it hands the reconstruction a cleaner
-            // image to work from.
-            w = ((win_w as f32 * ratio).round() as u32 * ss).max(2);
-            h = ((win_h as f32 * ratio).round() as u32 * ss).max(2);
-            self.st.fit = if win_h as f32 > win_w as f32 * 1.25 { 0.92 } else { 1.0 };
-            return (w, h);
-        }
-        if self.st.res_pin == 3 && self.warm <= 0 {
-            w = FHD_W;
-            h = FHD_H;
-        } else {
-            // Half and Native pin the scale; Auto hands it to the frame-time
-            // controller. Either way it is the same field, so a pinned resolution
-            // can still be given up when the frame time becomes untenable.
-            let q = self.st.scale_q;
-            w = ((win_w as f32 * q).round() as u32).max(2);
-            h = ((win_h as f32 * q).round() as u32).max(2);
-            let max_px: f32 = if self.warm > 0 {
-                1.1e5
-            } else if self.march_cap <= 96.0 {
-                4.0e5 // software
-            } else if self.st.res_pin != 0 {
-                3.4e7 // pinned by hand: let the GPU stretch
-            } else {
-                3.0e6 // auto stays inside what a per-pixel marcher can sustain
-            };
-            let px = (w * h * ss * ss) as f32;
-            if px > max_px {
-                let k = (max_px / px).sqrt();
-                w = (((w as f32) * k).round() as u32).max(2);
-                h = (((h as f32) * k).round() as u32).max(2);
-            }
-        }
-        self.st.fit = if win_h as f32 > win_w as f32 * 1.25 { 0.92 } else { 1.0 };
-        (w * ss, h * ss)
+    /// The sizes this frame is drawn at. The swapchain is always the window; the
+    /// post pass fits base to it, which is what the browser's canvas scaling did on
+    /// the page. The arithmetic itself lives in `state::frame_size` so it can be
+    /// tested without a window.
+    fn frame_sizes(&mut self, win_w: u32, win_h: u32) -> Sizes {
+        let s = crate::state::frame_size((win_w, win_h), &self.st, self.warm > 0, self.march_cap);
+        self.st.fit = s.fit;
+        s
     }
 
     pub(crate) fn set_fullscreen(&mut self, on: bool) {
@@ -480,6 +448,8 @@ impl App {
         let info = RunInfo {
             rw: self.rw,
             rh: self.rh,
+            bw: self.bw,
+            bh: self.bh,
             win_w,
             win_h,
             scale_factor: scale,
@@ -564,9 +534,12 @@ impl App {
             self.cam = camera::camera(&self.st, self.st.clock);
         }
 
-        let (rw, rh) = self.render_size(size.width, size.height);
+        let sizes = self.frame_sizes(size.width, size.height);
+        let (rw, rh) = sizes.marched;
         self.rw = rw;
         self.rh = rh;
+        self.bw = sizes.base.0;
+        self.bh = sizes.base.1;
 
         // ---- the console ----
         let egui_ctx = self.egui_ctx.clone();
@@ -594,7 +567,7 @@ impl App {
             g.scene_pipe(scene);
             // The upscaler takes the first pass when it is on; FXAA then runs on
             // what it reconstructed, rather than being switched off by it.
-            let upscaling = self.st.upscale_ratio().is_some() && self.warm <= 0;
+            let upscaling = sizes.upscaling;
             let fxaa = self.st.aa == 1;
             let post = if upscaling {
                 PostMode::Upscale
@@ -609,6 +582,7 @@ impl App {
                 &uniforms,
                 rw,
                 rh,
+                sizes.base,
                 post,
                 then_fxaa,
                 self.st.sharpen,

@@ -98,7 +98,7 @@ Everything below is why a native build is worth having; the picture is the same.
 - **One filter step instead of two.** With antialiasing off at Native resolution the
   march writes straight to the screen and the post pass is skipped entirely; the
   console's *post* readout names whichever chain ran — `direct`, `resolve`, `FXAA`,
-  `upscale`, or a reconstruction with antialiasing after it.
+  `upscale`, `upscale+fit`, or a reconstruction with antialiasing after it.
 - **FHD resizes the window** to 1920 × 1080 for real, which a browser tab refuses.
   In full screen it cannot resize anything, so it marches a literal 1920 × 1080 and
   the post pass stretches that to the monitor.
@@ -114,10 +114,11 @@ PATH, and the one built into Windows otherwise. Both work; DXC is quicker to com
 **Upscale** in the post-processing group is the performance lever: the march runs at
 a fraction of the size the image is shown at, and the missing pixels are rebuilt.
 
-Today that fraction is measured against the **window**, and it overrides the
-Resolution control while it is on — so FHD + Upscale does not currently give you a
-reconstructed 1920×1080. Making Upscale work off the chosen Resolution instead is
-the next change.
+That fraction is measured against the **Resolution** you chose, not against the
+window. So FHD + Performance marches 960 × 540, rebuilds it to a real 1920 × 1080,
+and only then meets the monitor — the picture stays the size you pinned and only the
+march gets cheaper. Half, Native and Auto work the same way: the upscaler divides
+whichever base is live. The console prints the chain under the Resolution row.
 
 | | | |
 | --- | --- | --- |
@@ -131,8 +132,8 @@ a sharpen clamped to the neighbourhood it came from, so it cannot ring or halo;
 **Sharpen** sets how hard it pulls.
 
 **Antialiasing still works with it.** FXAA runs as a second pass, on the
-reconstructed image rather than instead of it, so the edges come out smooth at
-full size. SSAA still means what it says — march more pixels than the output — so
+reconstructed image rather than instead of it, so the edges come out smooth at the
+chosen resolution. SSAA still means what it says — march more pixels than the output — so
 it multiplies the upscaler's render size and hands the reconstruction a cleaner
 image, at the cost of the saving. The console's *post* readout names whichever
 chain ran.
@@ -207,7 +208,7 @@ allowed.
 ## Checking it
 
 ```
-cargo test                                     # 16 tests, no GPU needed
+cargo test                                     # no GPU needed
 NODE_PATH=/opt/node22/lib/node_modules \
   node tools/parity.mjs                        # the port vs the page, pixel for pixel
 ```
