@@ -1,21 +1,34 @@
 //! The console, the telemetry panel, the frame-rate graph and the benchmark report.
 //!
-//! Same controls as the page, in the same three folding groups, plus a fourth for
-//! the things only a native build has: which graphics API is live, how frames are
-//! presented, and the named templates on disk.
+//! Same controls as the page, in the same folding groups, plus the ones only a
+//! native build has: the surface itself, a post-processing group that exposes what
+//! the page kept as constants, which graphics API is live, how frames are
+//! presented, and the templates on disk.
+//!
+//! Everything is drawn in Klein blue, white or black. Nothing is grey: mid-grey on
+//! a coloured ground is what made the old console hard to read.
 
 use crate::app::App;
 use crate::camera;
 use crate::state::{
     Backend, Present, AA_NAME, BND_NAME, OBJ_NAME, PATH_NAME, RES_NAME, STEPS_MAX, UM_PER_UNIT,
+    UPSCALE_NAME,
 };
 use egui::{Align2, Color32, FontId, RichText, Stroke, Vec2};
 
-const FIBER: Color32 = Color32::from_rgb(0x2F, 0xD9, 0xC0);
-const DIM: Color32 = Color32::from_rgb(0x6A, 0x7A, 0x88);
+/// International Klein Blue. Everything the console draws is this, black or white
+/// — no mid-grey on a coloured ground, which is what was hard to read.
+const KLEIN: Color32 = Color32::from_rgb(0x00, 0x2F, 0xA7);
+const KLEIN_LIT: Color32 = Color32::from_rgb(0x1E, 0x4F, 0xD8);
+const KLEIN_DEEP: Color32 = Color32::from_rgb(0x00, 0x1E, 0x6E);
+const WHITE: Color32 = Color32::from_rgb(0xFF, 0xFF, 0xFF);
+/// labels and readings: white held back a little, never grey
+const LABEL: Color32 = Color32::from_rgb(0xC8, 0xD2, 0xF0);
+/// the frame-rate trace: light enough to read on the panel
+const TRACE: Color32 = Color32::from_rgb(0x6E, 0x9C, 0xFF);
 const CHROME: Color32 = Color32::from_rgb(0xC6, 0xD3, 0xDC);
 const MEAN: Color32 = Color32::from_rgb(0xFF, 0xCE, 0x4A);
-const PANEL: Color32 = Color32::from_rgba_premultiplied(6, 10, 16, 214);
+const PANEL: Color32 = Color32::from_rgba_premultiplied(5, 8, 20, 226);
 
 const GRAPH_MS: f64 = 5000.0;
 const G_TOPS: [f32; 4] = [60.0, 120.0, 240.0, 480.0];
@@ -24,25 +37,49 @@ pub fn style(ctx: &egui::Context) {
     let mut v = egui::Visuals::dark();
     v.panel_fill = PANEL;
     v.window_fill = PANEL;
-    v.window_stroke = Stroke::new(1.0, Color32::from_rgba_premultiplied(47, 217, 192, 56));
-    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, CHROME);
-    v.widgets.inactive.bg_fill = Color32::from_rgba_premultiplied(47, 217, 192, 26);
-    v.widgets.inactive.weak_bg_fill = Color32::from_rgba_premultiplied(47, 217, 192, 20);
-    v.widgets.hovered.bg_fill = Color32::from_rgba_premultiplied(47, 217, 192, 60);
-    v.widgets.active.bg_fill = Color32::from_rgba_premultiplied(47, 217, 192, 90);
-    v.selection.bg_fill = Color32::from_rgba_premultiplied(47, 217, 192, 120);
+    v.window_stroke = Stroke::new(1.0, KLEIN_LIT);
+
+    // Every piece of text is white on Klein blue, or black on white when a control
+    // is pressed. Nothing is drawn in grey.
+    v.override_text_color = Some(WHITE);
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, WHITE);
+    v.widgets.noninteractive.bg_fill = PANEL;
+
+    v.widgets.inactive.bg_fill = KLEIN;
+    v.widgets.inactive.weak_bg_fill = KLEIN;
+    v.widgets.inactive.fg_stroke = Stroke::new(1.0, WHITE);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, KLEIN_LIT);
+
+    v.widgets.hovered.bg_fill = KLEIN_LIT;
+    v.widgets.hovered.weak_bg_fill = KLEIN_LIT;
+    v.widgets.hovered.fg_stroke = Stroke::new(1.0, WHITE);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, WHITE);
+
+    // pressed and selected read as the inverse: white ground, black text
+    v.widgets.active.bg_fill = WHITE;
+    v.widgets.active.weak_bg_fill = WHITE;
+    v.widgets.active.fg_stroke = Stroke::new(1.0, Color32::BLACK);
+    v.widgets.active.bg_stroke = Stroke::new(1.0, WHITE);
+    v.widgets.open.bg_fill = KLEIN_DEEP;
+    v.widgets.open.fg_stroke = Stroke::new(1.0, WHITE);
+
+    v.selection.bg_fill = WHITE;
     v.selection.stroke = Stroke::new(1.0, Color32::BLACK);
     v.window_shadow = egui::epaint::Shadow::NONE;
+    v.window_corner_radius = egui::CornerRadius::ZERO;
     ctx.set_visuals(v);
     ctx.all_styles_mut(|s| {
         s.spacing.slider_width = 176.0;
         s.spacing.item_spacing = Vec2::new(6.0, 5.0);
         s.spacing.interact_size.y = 20.0;
+        s.visuals.widgets.inactive.corner_radius = egui::CornerRadius::ZERO;
+        s.visuals.widgets.hovered.corner_radius = egui::CornerRadius::ZERO;
+        s.visuals.widgets.active.corner_radius = egui::CornerRadius::ZERO;
     });
 }
 
 fn lbl(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text.to_uppercase()).size(9.0).color(DIM).monospace());
+    ui.label(RichText::new(text.to_uppercase()).size(9.0).color(LABEL).monospace());
 }
 
 /// A row of mutually exclusive buttons, the console's `.seg`.
@@ -86,7 +123,7 @@ fn slider(
     ui.horizontal(|ui| {
         lbl(ui, label);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(RichText::new(fmt(*v)).size(10.0).color(FIBER).monospace());
+            ui.label(RichText::new(fmt(*v)).size(10.0).color(WHITE).monospace());
         });
     });
     ui.add(egui::Slider::new(v, range).step_by(step).show_value(false));
@@ -118,9 +155,9 @@ impl App {
                         ui.vertical(|ui| {
                             lbl(ui, k);
                             ui.horizontal(|ui| {
-                                ui.label(RichText::new(v).size(15.0).color(FIBER).monospace());
+                                ui.label(RichText::new(v).size(15.0).color(WHITE).monospace());
                                 if !unit.is_empty() {
-                                    ui.label(RichText::new(unit).size(9.0).color(DIM));
+                                    ui.label(RichText::new(unit).size(9.0).color(LABEL));
                                 }
                             });
                         });
@@ -207,7 +244,7 @@ impl App {
                 Align2::RIGHT_CENTER,
                 format!("{}", *mark as i32),
                 font.clone(),
-                DIM,
+                LABEL,
             );
         }
         if filled < 2 {
@@ -230,7 +267,7 @@ impl App {
             started = true;
             pts.push(egui::pos2(x0 + j as f32 * (x1 - x0) / (n - 1) as f32, map_y(v)));
         }
-        let fill = Color32::from_rgba_premultiplied(12, 55, 49, 90);
+        let fill = Color32::from_rgba_premultiplied(14, 30, 96, 110);
         for w in pts.windows(2) {
             p.rect_filled(
                 egui::Rect::from_min_max(
@@ -241,7 +278,7 @@ impl App {
                 fill,
             );
         }
-        p.add(egui::Shape::line(pts, Stroke::new(1.0, FIBER)));
+        p.add(egui::Shape::line(pts, Stroke::new(1.0, TRACE)));
 
         // the five-second mean, in yellow, with its own reading
         if avg > 0.0 {
@@ -270,6 +307,7 @@ impl App {
                 egui::ScrollArea::vertical().max_height(max_h - 24.0).show(ui, |ui| {
                     self.group_construction(ui);
                     self.group_object(ui);
+                    self.group_post(ui);
                     self.group_render(ui);
                     self.group_store(ui);
                     self.footer(ui);
@@ -295,9 +333,9 @@ impl App {
     }
 
     fn group_construction(&mut self, ui: &mut egui::Ui) {
-        let mut open = self.st.groups[0];
+        let mut open = self.st.group_open(0);
         let show = Self::header(ui, "Construction", &mut open);
-        self.st.groups[0] = open;
+        self.st.set_group(0, open);
         if !show {
             return;
         }
@@ -345,9 +383,9 @@ impl App {
     }
 
     fn group_object(&mut self, ui: &mut egui::Ui) {
-        let mut open = self.st.groups[1];
+        let mut open = self.st.group_open(1);
         let show = Self::header(ui, "Object modifications", &mut open);
-        self.st.groups[1] = open;
+        self.st.set_group(1, open);
         if !show {
             return;
         }
@@ -380,7 +418,7 @@ impl App {
             ui.label(
                 RichText::new(format!("auto {}", self.st.march_steps(cap) as i32))
                     .size(9.0)
-                    .color(DIM)
+                    .color(LABEL)
                     .monospace(),
             );
         }
@@ -437,6 +475,12 @@ impl App {
             ui.color_edit_button_rgb(&mut self.st.colors[scene][1]);
         });
 
+        // NATIVE: the surface itself. The page had one fixed highlight.
+        slider(ui, "Smoothness", &mut self.st.mat_smooth, 0.0..=1.0, 0.01, |v| {
+            format!("{:.0} gloss", (1.0 + 9.169925 * v).exp2())
+        });
+        slider(ui, "Metalness", &mut self.st.mat_metal, 0.0..=1.0, 0.01, |v| format!("{v:.2}"));
+
         ui.horizontal_wrapped(|ui| {
             if ui.selectable_label(self.st.running, RichText::new("Flight").size(11.0)).clicked() {
                 self.st.running = !self.st.running;
@@ -452,10 +496,57 @@ impl App {
         ui.add_space(4.0);
     }
 
+    /// Everything that happens to the image after the march, including the four
+    /// values that were constants in the page's shader and had no control at all.
+    fn group_post(&mut self, ui: &mut egui::Ui) {
+        let mut open = self.st.group_open(2);
+        let show = Self::header(ui, "Post-processing", &mut open);
+        self.st.set_group(2, open);
+        if !show {
+            return;
+        }
+        ui.add_space(2.0);
+
+        lbl(ui, "Antialiasing");
+        let mut aa = self.st.aa;
+        if seg(ui, &mut aa, &AA_NAME) {
+            self.st.aa = aa;
+        }
+
+        lbl(ui, "Upscale  \u{b7}  march below the window and rebuild");
+        let mut up = self.st.upscale;
+        if seg(ui, &mut up, &UPSCALE_NAME) {
+            self.st.upscale = up;
+        }
+        if self.st.upscale > 0 {
+            slider(ui, "Sharpen", &mut self.st.sharpen, 0.0..=1.0, 0.01, |v| format!("{v:.2}"));
+            let pct = self.st.upscale_ratio().unwrap_or(1.0) * 100.0;
+            ui.label(
+                RichText::new(format!(
+                    "marching {pct:.0}% of each axis \u{2014} about {:.0}% of the pixels",
+                    pct * pct / 100.0
+                ))
+                .size(9.0)
+                .color(LABEL),
+            );
+        }
+
+        slider(ui, "Exposure", &mut self.st.post_exposure, 0.20..=3.00, 0.01, |v| {
+            format!("{v:.2}\u{d7}")
+        });
+        slider(ui, "Glow", &mut self.st.post_glow, 0.0..=3.0, 0.01, |v| format!("{v:.2}\u{d7}"));
+        slider(ui, "Fog", &mut self.st.post_fog, 0.0..=2.0, 0.01, |v| format!("{v:.2}\u{d7}"));
+        slider(ui, "Vignette", &mut self.st.post_vignette, 0.0..=1.50, 0.01, |v| format!("{v:.2}"));
+        slider(ui, "Grain", &mut self.st.post_grain, 0.0..=0.12, 0.001, |v| {
+            format!("{:.1}/255", v * 255.0)
+        });
+        ui.add_space(4.0);
+    }
+
     fn group_render(&mut self, ui: &mut egui::Ui) {
-        let mut open = self.st.groups[2];
+        let mut open = self.st.group_open(3);
         let show = Self::header(ui, "Rendering", &mut open);
-        self.st.groups[2] = open;
+        self.st.set_group(3, open);
         if !show {
             return;
         }
@@ -465,10 +556,10 @@ impl App {
         if seg(ui, &mut res, &RES_NAME) {
             self.set_res(res);
         }
-        lbl(ui, "Antialiasing");
-        let mut aa = self.st.aa;
-        if seg(ui, &mut aa, &AA_NAME) {
-            self.st.aa = aa;
+        if self.st.upscale > 0 {
+            ui.label(
+                RichText::new("the upscaler is setting the render size").size(9.0).color(LABEL),
+            );
         }
 
         // ---- native only ----
@@ -521,7 +612,7 @@ impl App {
             ui.label(
                 RichText::new(format!("{}  \u{b7}  post {}", g.adapter_name, g.post_path))
                     .size(9.0)
-                    .color(DIM),
+                    .color(LABEL),
             );
         }
         if !self.gfx_note.is_empty() {
@@ -531,9 +622,9 @@ impl App {
     }
 
     fn group_store(&mut self, ui: &mut egui::Ui) {
-        let mut open = self.st.groups[3];
+        let mut open = self.st.group_open(4);
         let show = Self::header(ui, "Templates", &mut open);
-        self.st.groups[3] = open;
+        self.st.set_group(4, open);
         if !show {
             return;
         }
@@ -552,8 +643,15 @@ impl App {
             ui.label(
                 RichText::new("A template holds every setting and all six views.")
                     .size(9.0)
-                    .color(DIM),
+                    .color(LABEL),
             );
+        }
+        if ui
+            .button(RichText::new("Web page settings + views").size(11.0))
+            .on_hover_text("Everything the browser was last left on, including its six saved views")
+            .clicked()
+        {
+            self.load_web_default();
         }
         let mut load: Option<usize> = None;
         let mut drop: Option<usize> = None;
@@ -605,8 +703,8 @@ impl App {
             .as_ref()
             .filter(|(_, at)| at.elapsed().as_secs_f32() < 1.4)
             .map(|(m, _)| m.clone());
-        ui.label(RichText::new(toast.unwrap_or_else(|| hint.to_string())).size(9.0).color(DIM));
-        ui.label(RichText::new(self.note.clone()).size(9.0).color(DIM));
+        ui.label(RichText::new(toast.unwrap_or_else(|| hint.to_string())).size(9.0).color(LABEL));
+        ui.label(RichText::new(self.note.clone()).size(9.0).color(LABEL));
     }
 
     fn report_window(&mut self, ctx: &egui::Context) {
@@ -628,8 +726,8 @@ impl App {
             .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(big).size(30.0).color(FIBER).monospace());
-                    ui.label(RichText::new(unit).size(10.0).color(DIM));
+                    ui.label(RichText::new(big).size(30.0).color(WHITE).monospace());
+                    ui.label(RichText::new(unit).size(10.0).color(LABEL));
                 });
                 egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
                     ui.label(RichText::new(body).size(11.0).monospace().color(CHROME));

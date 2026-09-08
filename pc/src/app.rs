@@ -2,7 +2,7 @@
 
 use crate::bench::{Bench, RunInfo};
 use crate::camera::{self, Cam, Held, Rng};
-use crate::gfx::{EguiFrame, Frame, Gfx};
+use crate::gfx::{EguiFrame, Frame, Gfx, PostMode};
 use crate::state::{Backend, Present, State, FHD_H, FHD_W, STEPS_MAX};
 use crate::store::{self, Template};
 use std::sync::Arc;
@@ -63,6 +63,28 @@ impl History {
     }
 }
 
+/// `--import <file>`: a settings export from the web page, in any of the shapes
+/// the page saves it in.
+fn import_arg() -> Option<String> {
+    let args: Vec<String> = std::env::args().collect();
+    let i = args.iter().position(|a| a == "--import")?;
+    args.get(i + 1).cloned()
+}
+
+/// Bring a device up without letting a driver that dies on the way take the
+/// session with it: a panic here costs the switch, not the app.
+fn try_gfx(
+    window: Arc<Window>,
+    backend: Backend,
+    present: crate::state::Present,
+) -> Result<Gfx, String> {
+    let attempt = std::panic::AssertUnwindSafe(|| Gfx::new(window, backend, present));
+    match std::panic::catch_unwind(attempt) {
+        Ok(r) => r,
+        Err(_) => Err(format!("{} crashed while starting up", backend.label())),
+    }
+}
+
 pub struct ReportView {
     pub title: String,
     pub big: String,
@@ -116,15 +138,30 @@ pub struct App {
 
 impl App {
     pub fn new(backend_arg: Option<Backend>) -> App {
-        let mut st = State::default();
-        let builtin = st.clone();
-        let mut note = "Settings are saved on this computer".to_string();
+        let builtin = State::default();
+        let mut note;
+        let mut st;
         if let Some(saved) = store::load_settings() {
             st = saved;
             note = format!(
                 "Loaded {}",
                 store::settings_path().map(|p| p.display().to_string()).unwrap_or_default()
             );
+        } else {
+            // Nothing saved here yet, so open on the page's own settings — same
+            // object, same framing, same six views as the browser was left on.
+            st = store::web_default();
+            note = "Opened on the settings the web page was left on".to_string();
+        }
+        // `--import <file>` brings over a newer export from the page
+        if let Some(path) = import_arg() {
+            match store::import_web_file(&path) {
+                Ok(imported) => {
+                    st = imported;
+                    note = format!("Imported {path}");
+                }
+                Err(e) => note = format!("Could not import {path}: {e}"),
+            }
         }
         if let Some(b) = backend_arg {
             st.backend = b;
@@ -202,37 +239,51 @@ impl App {
 
     /// Bring up a device on `backend`, and the console with it.
     ///
-    /// Windows lets a window's pixel format be set only once, so a window that has
-    /// already carried an OpenGL context may refuse the next one. A failed switch
-    /// therefore gets one attempt on a fresh window before falling back to another
-    /// API — otherwise "try OpenGL" would be a one-way door.
+    /// **A window can only ever be OpenGL's once.** Windows lets a window's pixel
+    /// format be set a single time, and OpenGL sets one; handing that same window
+    /// to Vulkan or DirectX afterwards — or to a second OpenGL context — is what
+    /// took the driver down. So any switch with OpenGL on either side gets a fresh
+    /// window before the device is even asked for, and the old one is dropped.
+    ///
+    /// Creation is also caught: a driver that panics on the way up costs the
+    /// switch, not the session.
     fn build_gfx(&mut self, el: &ActiveEventLoop, backend: Backend) {
         let Some(window) = self.window.clone() else { return };
         let size = window.inner_size();
         let was_fullscreen = self.st.fullscreen;
+        let leaving = self.gfx.as_ref().map(|g| g.backend);
         self.gfx = None; // the old device must let go of the window first
 
         let mut window = window;
-        let mut err = match Gfx::new(window.clone(), backend, self.st.present) {
+        let mut tried_fresh = false;
+        if leaving.is_some() && (leaving == Some(Backend::Gl) || backend == Backend::Gl) {
+            if let Some(fresh) = self.make_window(el, Some(size)) {
+                self.window = Some(fresh.clone());
+                window = fresh;
+                tried_fresh = true;
+            }
+        }
+
+        let mut err = match try_gfx(window.clone(), backend, self.st.present) {
             Ok(g) => {
-                self.adopt(g, backend, window);
+                self.adopt(g, backend, window, was_fullscreen);
                 return;
             }
             Err(e) => e,
         };
 
-        if let Some(fresh) = self.make_window(el, Some(size)) {
-            self.window = Some(fresh.clone());
-            window = fresh;
-            match Gfx::new(window.clone(), backend, self.st.present) {
-                Ok(g) => {
-                    self.adopt(g, backend, window);
-                    if was_fullscreen {
-                        self.set_fullscreen(true);
+        // it may still be the window's fault — give it one clean one
+        if !tried_fresh {
+            if let Some(fresh) = self.make_window(el, Some(size)) {
+                self.window = Some(fresh.clone());
+                window = fresh;
+                match try_gfx(window.clone(), backend, self.st.present) {
+                    Ok(g) => {
+                        self.adopt(g, backend, window, was_fullscreen);
+                        return;
                     }
-                    return;
+                    Err(e) => err = e,
                 }
-                Err(e) => err = e,
             }
         }
 
@@ -241,13 +292,10 @@ impl App {
             if b == backend || !b.available() {
                 continue;
             }
-            if let Ok(g) = Gfx::new(window.clone(), b, self.st.present) {
-                self.adopt(g, b, window.clone());
+            if let Ok(g) = try_gfx(window.clone(), b, self.st.present) {
+                self.adopt(g, b, window.clone(), was_fullscreen);
                 self.gfx_note = format!("{} \u{2014} using {} instead", err, b.label());
                 self.toast(format!("{} is not available here", backend.label()));
-                if was_fullscreen {
-                    self.set_fullscreen(true);
-                }
                 return;
             }
         }
@@ -257,7 +305,15 @@ impl App {
 
     /// Take on a freshly built device: rebuild the console against it, and let a
     /// software adapter bring the march budget down before the first frame.
-    fn adopt(&mut self, mut g: Gfx, backend: Backend, window: Arc<Window>) {
+    fn adopt(&mut self, g: Gfx, backend: Backend, window: Arc<Window>, fullscreen: bool) {
+        self.adopt_inner(g, backend, window);
+        // a new window opens windowed, whatever the old one was doing
+        if fullscreen {
+            self.set_fullscreen(true);
+        }
+    }
+
+    fn adopt_inner(&mut self, mut g: Gfx, backend: Backend, window: Arc<Window>) {
         // The console's renderer lives inside Gfx, and egui hands over its font
         // atlas exactly once — so a new device needs a new context to be given one.
         self.egui_ctx = egui::Context::default();
@@ -302,6 +358,14 @@ impl App {
         // the budget applies to that, not to the window
         let ss = if self.st.aa == 2 { 2 } else { 1 };
         let (mut w, mut h);
+        if let (Some(ratio), true) = (self.st.upscale_ratio(), self.warm <= 0) {
+            // The upscaler owns the render size: the whole point is to march
+            // fewer pixels than the window has and rebuild the rest.
+            w = ((win_w as f32 * ratio).round() as u32).max(2);
+            h = ((win_h as f32 * ratio).round() as u32).max(2);
+            self.st.fit = if win_h as f32 > win_w as f32 * 1.25 { 0.92 } else { 1.0 };
+            return (w, h);
+        }
         if self.st.res_pin == 3 && self.warm <= 0 {
             w = FHD_W;
             h = FHD_H;
@@ -525,12 +589,22 @@ impl App {
             g.resize_surface(size.width, size.height);
             let scene = self.st.scene;
             g.scene_pipe(scene);
+            // Reconstructing beats antialiasing an image that is already short of
+            // pixels, so the upscaler takes the pass when it is on.
+            let post = if self.st.upscale_ratio().is_some() && self.warm <= 0 {
+                PostMode::Upscale
+            } else if self.st.aa == 1 {
+                PostMode::Fxaa
+            } else {
+                PostMode::Resolve
+            };
             let outcome = g.render(
                 scene,
                 &uniforms,
                 rw,
                 rh,
-                self.st.aa == 1,
+                post,
+                self.st.sharpen,
                 EguiFrame { jobs, delta: full.textures_delta, pixels_per_point: ppp },
             );
             if outcome == Frame::Skipped {
@@ -755,6 +829,22 @@ impl App {
             }
             Err(e) => self.note = format!("Could not save the template: {e}"),
         }
+    }
+
+    /// Put back the settings and the six views the web page was left on. The
+    /// snapshot ships with the binary, so this works with no network.
+    pub(crate) fn load_web_default(&mut self) {
+        let keep = (self.st.backend, self.st.present, self.st.fullscreen, self.st.exclusive);
+        self.st = store::web_default();
+        self.st.backend = keep.0;
+        self.st.present = keep.1;
+        self.st.fullscreen = keep.2;
+        self.st.exclusive = keep.3;
+        self.st.scale_q = match self.st.res_pin {
+            2 | 3 => 1.0,
+            _ => 0.5,
+        };
+        self.toast("Loaded the web page's settings and views");
     }
 
     pub(crate) fn load_template(&mut self, i: usize) {

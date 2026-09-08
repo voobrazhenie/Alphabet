@@ -38,6 +38,16 @@ struct Uniforms {
   bound: f32,        // bounding volume: 0 sphere, 1 box, 2 pick per object
   boundPad: f32,     // slack added to it
   warpMode: f32,     // noise warp: 0 bends the space, 1 pushes the surface
+  // NATIVE: the surface, and the passes after it. Every one of these was a
+  // constant in the page's shader; the defaults below reproduce it exactly.
+  matSmooth: f32,    // 0 rough .. 1 mirror. 0.5 is the page's highlight
+  matMetal: f32,     // 0 dielectric .. 1 metal: the highlight takes the body colour
+  postExposure: f32, // scales the image into the tone map
+  postGlow: f32,     // the haze the march accumulates around the surface
+  postFog: f32,      // how far the background reaches into the object
+  postVignette: f32, // corner falloff
+  postGrain: f32,    // the dither that keeps the gradients from banding
+  postPad: f32,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
@@ -588,32 +598,43 @@ fn render(fc: vec2f) -> vec3f {
       let ndv = max(dot(n, -rd), 0.0);
       let fres = 0.035 + 0.965 * pow(1.0 - ndv, 5.0);
       let hv = normalize(key - rd);
-      let spec = pow(max(dot(n, hv), 0.0), 48.0);
+      // Smoothness is the width of the highlight, on a log scale so the slider
+      // feels even end to end. The constant is picked so that 0.5 lands on
+      // exactly 48, the page's exponent: at the default this is a no-op.
+      let gloss = exp2(1.0 + 9.169925 * U.matSmooth);
+      let spec = pow(max(dot(n, hv), 0.0), gloss);
+      // A metal has no diffuse of its own and tints what it reflects, so the
+      // body colour moves out of the diffuse term and into the highlight.
+      let specCol = mix(RIM, base, U.matMetal);
       var aoLip = 1.0;
       let ao = clamp(mapLip(p + n*0.05, &dmy, &aoLip) * aoLip * sceneLip() / 0.05, 0.0, 1.0) * 0.72 + 0.28;
       let sp = spikeAt(p);
 
-      col = base * (0.05 + 0.62*dif) * ao;
-      col = col + SPIKE * vec3f(0.88, 0.84, 1.0) * bak * 0.55;
+      let body = 1.0 - 0.85 * U.matMetal;   // a metal keeps almost none of its diffuse
+      col = base * (0.05 + 0.62*dif) * ao * body;
+      col = col + SPIKE * vec3f(0.88, 0.84, 1.0) * bak * 0.55 * body;
       col = col + SPIKE * sp * (0.70 + 2.2*somaMix) * U.spike;
-      col = col + U.colB.xyz * somaMix * somaMix * 0.42;
+      col = col + U.colB.xyz * somaMix * somaMix * 0.42 * body;
       col = col + U.colA.xyz * 0.06;
-      col = col + RIM * fres * (0.62 + 0.80*ao) * (0.85 + 0.55*somaMix);
-      col = col + RIM * spec * (0.45 + 3.2*fres);
+      col = col + specCol * fres * (0.62 + 0.80*ao) * (0.85 + 0.55*somaMix);
+      col = col + specCol * spec * (0.45 + 3.2*fres) * (1.0 + 2.0*U.matMetal);
 
       let fog = 1.0 - exp(-select(0.52, 0.22, U.scene > 0.5) * max(t - tNear, 0.0));
-      col = mix(col, bgCol(rd) * 1.15, fog * 0.78);
+      col = mix(col, bgCol(rd) * 1.15, fog * 0.78 * U.postFog);
     }
   }
 
-  col = col + (U.colA.xyz*0.60 + SPIKE*0.40) * glow * (0.55 + 0.70*U.spike);
+  col = col + (U.colA.xyz*0.60 + SPIKE*0.40) * glow * (0.55 + 0.70*U.spike) * U.postGlow;
 
+  // exposure, then the tone map that folds the highlights back into range, then
+  // the gamma the display expects
+  col = col * U.postExposure;
   col = col / (vec3f(1.0) + col);
   col = pow(max(col, vec3f(0.0)), vec3f(0.4545));
 
   let sv = fc/U.res - vec2f(0.5);
-  col = col * (1.0 - 0.55 * dot(sv, sv));
-  col = col + vec3f((hash33(vec3f(fc, U.time)).x - 0.5) * 0.022);
+  col = col * (1.0 - U.postVignette * dot(sv, sv));
+  col = col + vec3f((hash33(vec3f(fc, U.time)).x - 0.5) * U.postGrain);
 
   return col;
 }

@@ -13,6 +13,9 @@ pub const UM_PER_UNIT: f32 = 200.0;
 pub const SCENE_R: [f32; 3] = [1.55, 1.15, 1.10];
 
 pub const OBJ_NAME: [&str; 3] = ["Brain", "Neuron", "Chrome"];
+pub const UPSCALE_NAME: [&str; 4] = ["Off", "Quality", "Balanced", "Performance"];
+/// Construction, Object, Post-processing, Rendering, Templates
+pub const GROUPS: usize = 5;
 pub const RES_NAME: [&str; 4] = ["Auto", "Half", "Native", "FHD"];
 pub const AA_NAME: [&str; 3] = ["Off", "FXAA", "SSAA \u{d7}4"];
 pub const BND_NAME: [&str; 3] = ["Sphere", "Box", "Auto"];
@@ -165,9 +168,23 @@ pub struct State {
     pub fly_speed: f32,
     /// six camera slots, recalled with 5-0 and stored with shift+5-0
     pub favs: [Option<Fav>; 6],
-    /// which console groups are open
-    pub groups: [bool; 4],
+    /// which console groups are open. A Vec rather than an array so that adding a
+    /// group does not make every settings file already on disk unreadable.
+    pub groups: Vec<bool>,
     // ---- native only ----
+    /// the surface: highlight width and how metallic it reads
+    pub mat_smooth: f32,
+    pub mat_metal: f32,
+    /// the passes after it. All of these were constants in the page's shader.
+    pub post_exposure: f32,
+    pub post_glow: f32,
+    pub post_fog: f32,
+    pub post_vignette: f32,
+    pub post_grain: f32,
+    /// 0 off, else render below the window and reconstruct: 1 quality, 2 balanced,
+    /// 3 performance
+    pub upscale: usize,
+    pub sharpen: f32,
     pub backend: Backend,
     pub present: Present,
     pub fullscreen: bool,
@@ -242,7 +259,16 @@ impl Default for State {
             fly_pitch: 0.0,
             fly_speed: 0.60,
             favs: [None; 6],
-            groups: [true, true, true, true],
+            mat_smooth: 0.5, // exp2(1 + 9.169925*0.5) = 48 exactly, the page's exponent
+            mat_metal: 0.0,
+            post_exposure: 1.0,
+            post_glow: 1.0,
+            post_fog: 1.0,
+            post_vignette: 0.55,
+            post_grain: 0.022,
+            upscale: 0,
+            sharpen: 0.35,
+            groups: vec![true; GROUPS],
             backend: default_backend(),
             present: Present::Vsync,
             fullscreen: false,
@@ -272,6 +298,31 @@ pub fn default_backend() -> Backend {
 }
 
 impl State {
+    /// Is this console group open? Reads short — a settings file written before a
+    /// group existed simply opens the new one.
+    pub fn group_open(&self, i: usize) -> bool {
+        self.groups.get(i).copied().unwrap_or(true)
+    }
+
+    pub fn set_group(&mut self, i: usize, open: bool) {
+        if self.groups.len() <= i {
+            self.groups.resize(i + 1, true);
+        }
+        self.groups[i] = open;
+    }
+
+    /// How much of the window the march covers when the upscaler is on. These are
+    /// the ratios the vendors' own presets use, so the labels mean what people
+    /// expect them to mean.
+    pub fn upscale_ratio(&self) -> Option<f32> {
+        match self.upscale {
+            1 => Some(0.667), // quality
+            2 => Some(0.588), // balanced
+            3 => Some(0.500), // performance
+            _ => None,
+        }
+    }
+
     /// A warp divides the marching step by up to this much, so the ray needs
     /// proportionally more of them to cover the same distance.
     pub fn warp_k(&self) -> f32 {

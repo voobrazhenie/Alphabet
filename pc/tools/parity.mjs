@@ -79,6 +79,13 @@ function uniforms(scene, over = {}) {
     bound: 2,
     boundPad: 0.05,
     warpMode: 0,
+    matSmooth: 0.5,     // exp2(1 + 9.169925*0.5) = 48 exactly, the page's exponent
+    matMetal: 0.0,
+    postExposure: 1.0,
+    postGlow: 1.0,
+    postFog: 1.0,
+    postVignette: 0.55,
+    postGrain: 0.022,
     ...over,
   };
 }
@@ -189,7 +196,7 @@ for (const c of CASES) {
       const vs3 = compile(gl.VERTEX_SHADER, "#version 300 es\nin vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }");
       const pb = link(vs3, compile(gl.FRAGMENT_SHADER, portSrc));
       gl.useProgram(pb);
-      const f = new Float32Array(48);
+      const f = new Float32Array(56);
       f.set(u.res, 0);
       f[2] = u.time;
       f[3] = u.roll;
@@ -204,6 +211,11 @@ for (const c of CASES) {
       f.set([u.thick, u.warpAmt, u.warpFreq, u.lcTwirl], 36);
       f.set([u.lcRelief, u.lcFreq, u.lcThick, u.eps], 40);
       f.set([u.omega, u.bound, u.boundPad, u.warpMode], 44);
+      // the native-only material and post controls. Their defaults are the values
+      // the page hard-coded, so this comparison is also what proves they are
+      // exact no-ops until somebody moves a slider.
+      f.set([u.matSmooth, u.matMetal, u.postExposure, u.postGlow], 48);
+      f.set([u.postFog, u.postVignette, u.postGrain, 0], 52);
       const ubo = gl.createBuffer();
       gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
       gl.bufferData(gl.UNIFORM_BUFFER, f, gl.STATIC_DRAW);

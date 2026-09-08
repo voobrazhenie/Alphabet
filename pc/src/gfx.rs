@@ -44,6 +44,14 @@ pub struct Uniforms {
     pub bound: f32,
     pub bound_pad: f32,
     pub warp_mode: f32,
+    pub mat_smooth: f32,
+    pub mat_metal: f32,
+    pub post_exposure: f32,
+    pub post_glow: f32,
+    pub post_fog: f32,
+    pub post_vignette: f32,
+    pub post_grain: f32,
+    pub post_pad: f32,
 }
 
 /// Matches `struct Post` in shaders/post.wgsl.
@@ -52,8 +60,10 @@ pub struct Uniforms {
 pub struct PostUniforms {
     pub out_res: [f32; 2],
     pub texel: [f32; 2],
-    pub fxaa: f32,
-    pub pad: [f32; 3],
+    /// 0 resolve, 1 FXAA, 2 upscale
+    pub mode: f32,
+    pub sharpen: f32,
+    pub pad: [f32; 2],
 }
 
 /// What one call to [`Gfx::render`] managed. A skipped frame is normal — the window
@@ -62,6 +72,26 @@ pub struct PostUniforms {
 pub enum Frame {
     Drawn,
     Skipped,
+}
+
+/// What the post pass does with the marched image. Matches `P.mode` in post.wgsl.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PostMode {
+    /// straight read, or a bilinear down-sample when the target is bigger
+    Resolve = 0,
+    Fxaa = 1,
+    /// the march ran below the window on purpose: reconstruct it
+    Upscale = 2,
+}
+
+impl PostMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            PostMode::Resolve => "resolve",
+            PostMode::Fxaa => "FXAA",
+            PostMode::Upscale => "upscale",
+        }
+    }
 }
 
 pub struct EguiFrame {
@@ -386,18 +416,13 @@ impl Gfx {
         uniforms: &Uniforms,
         rw: u32,
         rh: u32,
-        fxaa: bool,
+        post: PostMode,
+        sharpen: f32,
         egui_frame: EguiFrame,
     ) -> Frame {
         let (w, h) = (self.config.width, self.config.height);
-        let direct = !fxaa && rw == w && rh == h;
-        self.post_path = if direct {
-            "direct"
-        } else if fxaa {
-            "FXAA"
-        } else {
-            "resolve"
-        };
+        let direct = post == PostMode::Resolve && rw == w && rh == h;
+        self.post_path = if direct { "direct" } else { post.label() };
         if !direct {
             self.ensure_target(rw, rh);
         }
@@ -409,8 +434,9 @@ impl Gfx {
             bytemuck::bytes_of(&PostUniforms {
                 out_res: [w as f32, h as f32],
                 texel: [1.0 / rw as f32, 1.0 / rh as f32],
-                fxaa: if fxaa { 1.0 } else { 0.0 },
-                pad: [0.0; 3],
+                mode: post as u32 as f32,
+                sharpen,
+                pad: [0.0; 2],
             }),
         );
 
@@ -620,5 +646,13 @@ pub fn uniforms(
         bound: st.bound as f32,
         bound_pad: st.bound_pad,
         warp_mode: st.warp_mode as f32,
+        mat_smooth: st.mat_smooth,
+        mat_metal: st.mat_metal,
+        post_exposure: st.post_exposure,
+        post_glow: st.post_glow,
+        post_fog: st.post_fog,
+        post_vignette: st.post_vignette,
+        post_grain: st.post_grain,
+        post_pad: 0.0,
     }
 }

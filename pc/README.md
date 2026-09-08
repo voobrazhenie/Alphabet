@@ -106,10 +106,44 @@ Everything below is why a native build is worth having; the picture is the same.
 DirectX 12 uses Microsoft's newer DXC shader compiler when `dxcompiler.dll` is on the
 PATH, and the one built into Windows otherwise. Both work; DXC is quicker to compile.
 
+## Upscaling — and why it is not DLSS
+
+**Upscale** in the post-processing group is the performance lever: the march runs at
+a fraction of the window and the missing pixels are rebuilt.
+
+| | | |
+| --- | --- | --- |
+| Quality | 67% of each axis | ~44% of the pixels |
+| Balanced | 59% | ~35% |
+| Performance | 50% | ~25% |
+
+A per-pixel ray march costs its pixels almost exactly linearly, so Performance is
+close to four times the frames. Reconstruction is a nine-tap Catmull-Rom kernel and
+a sharpen clamped to the neighbourhood it came from, so it cannot ring or halo;
+**Sharpen** sets how hard it pulls. Antialiasing stands down while it is on —
+reconstructing beats antialiasing an image that is already short of pixels.
+
+**This is not literally DLSS, and could not be here.** DLSS is NVIDIA's own
+library: it needs the NGX SDK and its redistributable DLLs, a Vulkan or D3D12
+device built by hand with extensions wgpu does not let a program add, and — to
+beat a good spatial filter — a depth buffer and per-pixel motion vectors, neither
+of which a ray march produces. It is also NVIDIA-only, which would leave the
+DirectX/Vulkan/OpenGL comparison measuring three different pictures. What is here
+is the same lever without the vendor lock: render fewer pixels, rebuild the rest,
+on all three APIs. If you want true DLSS afterwards, say so — it is a project of
+its own, not a switch.
+
 ## Templates and viewpoints
 
 - **Save as default** stores everything the console can set, the fly camera, the six
   viewpoint slots and which groups are open. It is what the app opens with.
+- **The web page's settings ship with the binary.** A fresh install opens on the
+  object, the framing and the six saved views the browser was last left on, so the
+  first frame you see is the picture you already know. **Web page settings + views**
+  in the Templates group puts them back at any time. To bring over a newer set,
+  export the page's settings to a file and start the app with
+  `cortical-flythrough.exe --import saved.json` — it reads the page's own format,
+  including a copy pasted straight out of the browser or the cloud document.
 - **Templates** are the same snapshot under a name. Type a name, press **Save**, and
   it joins the list with **Load** and **×**. Each template carries its own six
   viewpoints, so a template restores a look and the shots that show it off together.
@@ -118,6 +152,20 @@ PATH, and the one built into Windows otherwise. Both work; DXC is quicker to com
 Both live in `%APPDATA%\CorticalFlythrough\` — `settings.json` and `templates.json`.
 Plain JSON: back them up, edit them, copy them to another machine. Benchmark reports
 saved from the report window land in the same folder.
+
+## The surface and the passes after it
+
+The page had one fixed highlight and four hard-coded post values. Both are controls
+here, and every one of them defaults to exactly what the page did — the parity
+check in `tools/parity.mjs` is what proves it.
+
+- **Object modifications** gains **Smoothness** (the width of the highlight, on a
+  log scale — 0.5 is the page's) and **Metalness** (a metal drops its diffuse and
+  tints what it reflects with the body colour).
+- **Post-processing** collects **Antialiasing**, **Upscale**, **Exposure**,
+  **Glow**, **Fog**, **Vignette** and **Grain** — the last four had no control at
+  all before. Grain is the dither that keeps the gradients from banding; at 0 the
+  banding comes back, which is worth seeing once.
 
 ## Layout
 

@@ -19,8 +19,11 @@ faults are more likely than rendering faults. The likely suspects, in order:
 
 1. **Switching to OpenGL and back.** Windows lets a window's pixel format be set
    only once, so a window that has carried a WGL context may refuse the next one.
-   `App::build_gfx` already retries once on a brand-new window before falling back
-   to another API — that path has never actually run.
+   This crashed on the user's machine going OpenGL → Vulkan. `App::build_gfx` now
+   takes a **fresh window before it even asks for the device** whenever OpenGL is
+   on either side of the switch, and `try_gfx` catches a panic on the way up so a
+   bad driver costs the switch rather than the session. Fixed blind — worth
+   re-testing on hardware, in both directions and twice each way.
 2. **Exclusive full screen.** `Fullscreen::Exclusive` picks the monitor's largest,
    highest-refresh mode. Borderless is the default and the safe one.
 3. **Uncapped presentation.** `PresentMode::Immediate` is asked for and quietly
@@ -35,7 +38,7 @@ faults are more likely than rendering faults. The likely suspects, in order:
 Three checks, cheapest first. All of them run without a GPU.
 
 ```
-cargo test                     # 16 tests: shaders, uniforms, benchmark, camera, settings
+cargo test                     # 20 tests: shaders, uniforms, benchmark, camera, settings
 NODE_PATH=/opt/node22/lib/node_modules node tools/parity.mjs
 cargo check --target x86_64-pc-windows-msvc
 ```
@@ -78,6 +81,15 @@ runs — it just looks wrong, or dies on one backend only.
 - **The offscreen target uses the surface's format**, not a fixed one. That is what
   lets the same pipeline draw either into the target or straight to the screen —
   the `direct` path that skips the post pass when nothing needs resolving.
+- **The material and post controls must stay no-ops at their defaults.** Every one
+  of them (smoothness, metalness, exposure, glow, fog, vignette, grain) replaced a
+  constant in the page's shader, and the default reproduces that constant exactly —
+  smoothness 0.5 is `exp2(1 + 9.169925*0.5)` = 48 to the last bit. That is what
+  lets `parity.mjs` keep comparing against the page. Change a default and the
+  comparison stops meaning anything.
+- **The upscaler owns the render size when it is on.** `render_size` returns early
+  for it, and the post pass switches to reconstruction; the Resolution buttons are
+  bypassed and the console says so.
 - **The march loop must stay impossible to unroll.** Its trip count comes from
   `U.steps` through a `clamp`, so no compiler knows it. Put a constant bound back
   and DirectX's older FXC compiler may try to lay 300+ iterations out flat — which
@@ -140,8 +152,19 @@ no-op rather than a forty-file diff. Keep it that way.
 - **The GL backend passes no display handle** to `InstanceDescriptor`, which is
   fine on Windows and would need `new_with_display_handle` to work on Wayland.
 - **No installer, no code signing.** SmartScreen warns once on an unsigned binary.
+- **Not DLSS.** The Upscale control renders below the window and reconstructs with
+  a Catmull-Rom kernel and a clamped sharpen. Real DLSS needs NVIDIA's NGX SDK and
+  its DLLs, a Vulkan/D3D12 device built by hand with extensions wgpu will not let a
+  program add, and depth plus motion vectors that a ray march does not produce —
+  and it would only exist on one of the three backends, so the comparison would
+  stop being like for like. `README.md` says the same thing to the user.
 
 ## Layout reminder
+
+`presets/web-default.json` is the page's own saved settings, snapshotted from the
+cloud document at build time and read by `store::from_web_json`. It is what a fresh
+install opens on, and the reader takes all three shapes the page saves in (bare,
+the browser's `{data, at}`, and the cloud document). Nothing fetches it at runtime.
 
 `src/state.rs` mirrors the page's `state` object field for field — start there when
 adding a control, then `src/ui.rs` for the console row. `src/app.rs` holds the frame

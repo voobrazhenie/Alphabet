@@ -226,3 +226,78 @@ fn settings_survive_a_round_trip() {
     assert_eq!(sparse.scene, 1);
     assert_eq!(sparse.steps, State::default().steps, "missing fields fall back to the defaults");
 }
+
+/// The page's saved settings have to arrive intact: same object, same camera, same
+/// six views, so a fresh install opens on the picture the browser was left on.
+#[test]
+fn the_web_pages_settings_come_across() {
+    let st = cortical_flythrough::store::web_default();
+    // the page was left on the chrome slab, flying, with the field animating
+    assert_eq!(st.scene, 2);
+    assert!(st.fly);
+    assert!(st.morph);
+    assert!(!st.running, "the page had the camera held still");
+    assert!(!st.spike_on);
+    assert!((st.lc_twirl - 2.4).abs() < 1e-5, "twirl {}", st.lc_twirl);
+    assert!((st.eps - 5.8).abs() < 1e-5);
+    assert_eq!(st.steps, 248.0);
+    assert!(st.steps_pin);
+    // the fly camera, to the last decimal the shader will see
+    assert!((st.fly_pos[0] - -0.678_172_4).abs() < 1e-5, "{:?}", st.fly_pos);
+    assert!((st.fly_yaw - -4.686_872_6).abs() < 1e-5);
+    // and all six slots, each carrying the mode it was stored in
+    for i in 0..6 {
+        let f = st.favs[i].unwrap_or_else(|| panic!("view {i} is missing"));
+        assert!(f.fly, "view {i} was stored in fly mode");
+        assert!(f.pos.iter().any(|v| *v != 0.0), "view {i} has no position");
+    }
+    // colours survive the hex round trip: #009DFF is the chrome structure colour
+    let c = st.colors[2][0];
+    assert!((c[0] - 0.0).abs() < 1e-6 && (c[1] - 157.0 / 255.0).abs() < 1e-6 && c[2] == 1.0);
+}
+
+/// The three shapes the page saves in all read back the same.
+#[test]
+fn the_web_reader_takes_every_wrapper() {
+    use cortical_flythrough::store::from_web_json;
+    let bare = r##"{"scene":1,"fly":1,"lcTwirl":0.5,"colors":[["#FF0000","#00FF00"],["#000000","#FFFFFF"],["#123456","#654321"]]}"##;
+    let a = from_web_json(bare).unwrap();
+    assert_eq!(a.scene, 1);
+    assert!(a.fly);
+    assert_eq!(a.colors[0][0], [1.0, 0.0, 0.0]);
+
+    let browser = format!("{{\"at\":123,\"data\":{bare}}}");
+    assert_eq!(from_web_json(&browser).unwrap().scene, 1);
+
+    let cloud = serde_json::json!({
+        "fields": { "json": { "stringValue": bare }, "savedAt": { "integerValue": "123" } }
+    })
+    .to_string();
+    assert_eq!(from_web_json(&cloud).unwrap().scene, 1);
+
+    assert!(from_web_json("[]").is_err(), "an array is not a settings file");
+    assert!(from_web_json("not json").is_err());
+}
+
+/// Adding a console group must not make the settings already on disk unreadable.
+#[test]
+fn a_settings_file_from_an_older_build_still_opens() {
+    let older = r#"{"scene":1,"groups":[false,true,false]}"#;
+    let st: State = serde_json::from_str(older).unwrap();
+    assert_eq!(st.scene, 1);
+    assert!(!st.group_open(0));
+    assert!(st.group_open(1));
+    assert!(st.group_open(4), "a group the file predates opens by default");
+}
+
+/// The upscaler is the render size, so its presets have to mean what they say.
+#[test]
+fn the_upscaler_sets_the_render_size() {
+    let mut st = State::default();
+    assert_eq!(st.upscale_ratio(), None, "off by default");
+    st.upscale = 3;
+    let r = st.upscale_ratio().expect("performance is a ratio");
+    assert!((r - 0.5).abs() < 1e-6, "performance halves each axis");
+    st.upscale = 1;
+    assert!(st.upscale_ratio().unwrap() > 0.6, "quality marches most of the window");
+}
