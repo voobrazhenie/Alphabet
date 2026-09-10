@@ -52,6 +52,11 @@ async function pose(page, over) {
     s.aa = 0;
     s.velAz = 0; s.velEl = 0;        // a drag leaves inertia behind; the next one starts still
     s.matcapOn = 0; s.matcap = 0;    // every pose starts from the lit material
+    s.shadowSrc = 0; s.shadowLevel = 0.5; s.shadowContrast = 0; s.shadowMc = 0;
+    // A pose that leaves the geometry as the last one left it is not a pose. The
+    // cube rig turns build steps off and the warp down, and the next case along
+    // then quietly compares a different object with the baseline.
+    s.lcOn = [1, 1, 1, 1, 1, 0]; s.warpOn = [1, 0, 0]; s.warpAmt = 0.74;
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -200,6 +205,39 @@ const run = async () => {
     const on = await shot(page, o.name + "-on");
     say(!on.equals(off), `${o.name}: shadows on changes the image`);
     compare(on, o.name + "-on-base.png", "the shadows themselves are the stored ones");
+  }
+
+  // Three ways to arrive at a shadow. Only the first spends a ray; all three go
+  // through the same shaping and the same application, so the useful thing to
+  // hold them to is that they are genuinely three answers and not one answer
+  // wearing three hats — and that the hard end of the shaping really is hard.
+  if (mode === "check") {
+    // relief so the two textureless sources have normals to work with, and the
+    // cube so the marched one has something to actually cast
+    const rig = {
+      scene: 2, shadowOn: 1, shadowContrast: 1.0, sunAz: 0.9, sunEl: 0.90,
+      warpOn: [0, 0, 0], warpAmt: 0, lcOn: [1, 1, 0, 0, 0, 1],
+      fly: 0, mode: 0, dragAz: 0.0, dragEl: 0.50, zoom: 0.46,
+    };
+    const shots = [];
+    for (const [name, over] of [
+      ["ray march", { shadowSrc: 0, shadowLevel: 0.50 }],
+      ["sphere",    { shadowSrc: 1, shadowLevel: 0.50, shadowMc: 0 }],
+      ["sun angle", { shadowSrc: 2, shadowLevel: 0.76 }],
+    ]) {
+      const file = "shadow-" + name.replace(" ", "-");
+      // the same source with the shadow worked out and then not applied, so what
+      // is being measured is the shadow and not the lighting changing underneath
+      await pose(page, { ...rig, ...over, shadowDark: 0.0 });
+      const none = await shot(page, file + "-none");
+      await pose(page, { ...rig, ...over, shadowDark: 1.0 });
+      const full = await shot(page, file);
+      shots.push(full);
+      const d = darkened(none, full, 40);
+      say(d > 0.01, `${name}, full contrast and amount, really darkens (${(d * 100).toFixed(1)}%)`);
+    }
+    say(!shots[0].equals(shots[1]) && !shots[1].equals(shots[2]) && !shots[0].equals(shots[2]),
+        "and the three are three answers, not one in three hats");
   }
 
   // A matcap replaces the material outright, so there are only two things worth
