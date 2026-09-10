@@ -31,7 +31,7 @@ Exactly one is shown at a time.
 | --- | --- |
 | **Brain** | A lattice of somata and neurites inside a brain-shaped shell. Cell density is adjustable. |
 | **Neuron** | One cell: soma, five dendrites with a fork on each, and an axon, built from Bézier tubes. Line width is adjustable. |
-| **Chrome** (LiquidChrome) | A 20x20x0.5 slab, displaced by two octaves of Perlin into a landscape, intersected with an undeformed copy of itself, then twirled. Each of the five construction steps can be switched off on its own. |
+| **Chrome** (LiquidChrome) | A 20x20x0.5 slab, displaced by two octaves of Perlin into a landscape, intersected with an undeformed copy of itself, then twirled. Each of the five construction steps can be switched off on its own. A sixth switch, off by default, hangs a plain cube over the slab. |
 
 Each object keeps its own two colours (structure and accent).
 
@@ -294,10 +294,15 @@ steps and never further than **Reach**. It steps by the distance the field
 guarantees is clear and judges a near miss by the distance the surface probably
 is — the two are not the same number wherever a warp or the relief is on, and
 stepping by the second one lands the ray inside the surface it set off from,
-which reads as a hit and blackens faces the sun is plainly shining at. It also
-starts further clear of the surface the lower the sun sits on that face, since
-a ray leaving at a shallow angle stays inside the surface's own roughness a
-long way out. The closest that ray passes to anything, against how far it had
+which reads as a hit and blackens faces the sun is plainly shining at. Being
+inside is the sign of that second number and not a small value of it: calling a
+hit at a hundredth of a unit is a cliff, and on a ridge lit edge-on by a low sun
+neighbouring pixels fall either side of it and come back opposite. The ray also
+starts clear of the surface by two things added together — more the lower the
+sun sits on that face, since a ray leaving at a shallow angle stays inside the
+surface's own roughness a long way out, and more again by however far the main
+march may have overshot in landing, since a shadow ray born underground is black
+before it starts. The closest that ray passes to anything, against how far it had
 travelled, is how much of the sun it hides —
 so the penumbra comes out of the same march rather than out of more rays.
 **Softness** sets how wide the sun reads: 0 is a point and a hard edge, 1 is a
@@ -326,3 +331,16 @@ and the sun is aimed with **Sun across** and **Sun up**.
 
 A run with shadows on reports them, because a second ray per lit pixel is not
 the same work as one.
+
+**The test cube** is build step 6 on the Chrome object, off by default. It is a
+plain box hanging clear of the slab, and it exists to be checked by eye: put the
+relief away, leave the slab flat, and its shadow is one anybody can predict. It
+is taken in the untwirled coordinates so the twirl does not drag it, it is
+carried by the same distance bound as the slab, and the bounding volume grows to
+reach it. Nothing about it is clever, which is the point.
+
+A sun low on the horizon is not the same thing as a shadow. On a relief steep
+enough, most of the surface faces away from a sun a few degrees up, and looking
+toward that sun shows almost nothing but the sides that do — dark because they
+are turned away, with no ray cast at all. **Sun up** is the control that
+separates the two.

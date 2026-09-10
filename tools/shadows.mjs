@@ -65,16 +65,21 @@ async function pose(page, over) {
 // A WebGL canvas is cleared once it has been composited, so drawImage gives back
 // nothing. The screenshot is the only honest copy of the pixels — decode that.
 function decode(png) {
-  let i = 8, w = 0, h = 0, idat = [];
+  let i = 8, w = 0, h = 0, colour = 6, idat = [];
   while (i < png.length) {
     const len = png.readUInt32BE(i);
     const type = png.toString("ascii", i + 4, i + 8);
-    if (type === "IHDR") { w = png.readUInt32BE(i + 8); h = png.readUInt32BE(i + 12); }
+    // Chromium hands back an opaque canvas as RGB, not RGBA, so the stride is
+    // three bytes and not four. Reading it as four decodes to noise — and noise
+    // that still looks like a picture, which is how it went unnoticed.
+    if (type === "IHDR") { w = png.readUInt32BE(i + 8); h = png.readUInt32BE(i + 12); colour = png[i + 17]; }
     if (type === "IDAT") idat.push(png.subarray(i + 8, i + 8 + len));
     i += 12 + len;
   }
   const raw = inflateSync(Buffer.concat(idat));
-  const bpp = 4, stride = w * bpp;
+  const bpp = { 0: 1, 2: 3, 4: 2, 6: 4 }[colour];
+  if (!bpp) throw new Error("unsupported PNG colour type " + colour);
+  const stride = w * bpp;
   const out = Buffer.alloc(h * stride);
   let pos = 0;
   for (let y = 0; y < h; y++) {
@@ -94,15 +99,21 @@ function decode(png) {
       out[y * stride + x] = v & 255;
     }
   }
-  return { w, h, data: out };
+  return { w, h, bpp, data: out };
 }
 
-function darkFraction(png) {
-  const { data } = decode(png);
+// How much of the frame the second shot took away from the first. Asking instead
+// whether anything reaches pure black is asking the wrong question: film grain,
+// the vignette and the glow are all added after the shading, so nothing in this
+// picture is ever near zero, and a test for it passes or fails on the decoder
+// rather than on the shadows.
+function darkened(a, b, drop) {
+  const A = decode(a), B = decode(b);
+  const lum = (d, i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
   let n = 0, total = 0;
-  for (let i = 0; i < data.length; i += 4) {
+  for (let i = 0; i + 2 < A.data.length; i += A.bpp) {
     total++;
-    if (data[i] < 12 && data[i + 1] < 12 && data[i + 2] < 12) n++;
+    if (lum(A.data, i) - lum(B.data, i) > drop) n++;
   }
   return n / total;
 }
@@ -188,9 +199,30 @@ const run = async () => {
     const on = await shot(page, o.name + "-on");
     say(!on.equals(off), `${o.name}: shadows on changes the image`);
     compare(on, o.name + "-on-base.png", "the shadows themselves are the stored ones");
+  }
 
-    const dark = darkFraction(on);
-    say(dark > 0.02, `${o.name}: reaches real black (${(dark * 100).toFixed(1)}% of pixels)`);
+  // The cube is the one shadow anybody can check by eye, and the only test here
+  // that asks whether the feature WORKS rather than whether it changed. A box
+  // over flat ground with the sun well up: take the caster away and nothing else,
+  // and the pixels that got lighter are its shadow and nothing else.
+  {
+    const rig = {
+      scene: 2, warpOn: [0, 0, 0], warpAmt: 0, shadowOn: 1,
+      shadowSoft: 0.0, shadowDark: 1.0, shadowReach: 4.0, sunAz: 0.9, sunEl: 0.9,
+      fly: 0, mode: 0, dragAz: 0.0, dragEl: 0.50, zoom: 0.46,
+    };
+    await pose(page, { ...rig, lcOn: [1, 0, 0, 0, 0, 0] });
+    const noCube = await shot(page, "cube-absent");
+    await pose(page, { ...rig, lcOn: [1, 0, 0, 0, 0, 1] });
+    const withCube = await shot(page, "cube-present");
+    const sh = darkened(noCube, withCube, 40);
+    say(sh > 0.01, `the test cube casts a shadow on the slab (${(sh * 100).toFixed(1)}% of the frame)`);
+
+    // and it is the sun that does it, not the cube merely being in the way
+    await pose(page, { ...rig, lcOn: [1, 0, 0, 0, 0, 1], shadowOn: 0 });
+    const cubeUnlit = await shot(page, "cube-nosun");
+    const gone = darkened(cubeUnlit, withCube, 40);
+    say(gone > 0.01, `and the shadow is gone with the sun switched off (${(gone * 100).toFixed(1)}%)`);
   }
 
   if (mode === "check") {
