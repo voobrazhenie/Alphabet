@@ -51,6 +51,7 @@ async function pose(page, over) {
     s.resPin = 1; s.scaleQ = 0.30; s.stepsPin = true; s.steps = 64;
     s.aa = 0;
     s.velAz = 0; s.velEl = 0;        // a drag leaves inertia behind; the next one starts still
+    s.matcapOn = 0; s.matcap = 0;    // every pose starts from the lit material
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -199,6 +200,43 @@ const run = async () => {
     const on = await shot(page, o.name + "-on");
     say(!on.equals(off), `${o.name}: shadows on changes the image`);
     compare(on, o.name + "-on-base.png", "the shadows themselves are the stored ones");
+  }
+
+  // A matcap replaces the material outright, so there are only two things worth
+  // asking of it: that it does something, that the two built-in spheres do
+  // different things, and that switching it off puts the page back exactly as it
+  // was — the same no-op discipline the sun is held to.
+  if (mode === "check") {
+    const base = join(OUT, "chrome-base.png");
+    await pose(page, { scene: 2, shadowOn: 0, matcapOn: 1, matcap: 0 });
+    const mcA = await shot(page, "matcap-chrome");
+    await pose(page, { scene: 2, shadowOn: 0, matcapOn: 1, matcap: 1 });
+    const mcB = await shot(page, "matcap-normals");
+    say(!mcA.equals(mcB), "the two built-in matcaps give different pictures");
+    if (existsSync(base)) {
+      const off = readFileSync(base);
+      say(!mcA.equals(off), "a matcap replaces the lit material");
+      await pose(page, { scene: 2, shadowOn: 0, matcapOn: 0 });
+      say((await shot(page, "matcap-off")).equals(off),
+          "and switching it off is byte-identical to the baseline");
+    }
+
+    // and one loaded from disk, which is the half of this that has no built-in
+    // to fall back on: eight pixels of flat magenta, so the object drawn with it
+    // could not be mistaken for anything else.
+    const loaded = join(OUT, "loaded.png");
+    writeFileSync(loaded, Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mP4r3ECK2IYWhIAaFh7wVa+/gkAAAAASUVORK5CYII=",
+      "base64"));
+    await page.setInputFiles("#mcFile", loaded);
+    await page.waitForTimeout(500);
+    const list = await page.evaluate(() =>
+      Array.prototype.map.call(document.querySelectorAll("#mcSeg button"), b => b.textContent));
+    say(list.length === 3 && list[2] === "loaded", `a loaded sphere joins the list (${list.join(", ")})`);
+    say(await page.evaluate(() => window.__state.matcapOn === 1 && window.__state.matcap === 2),
+        "and is switched on and selected");
+    const drawn = await shot(page, "matcap-loaded");
+    say(!drawn.equals(mcA) && !drawn.equals(mcB), "and the object is drawn with it");
   }
 
   // The cube is the one shadow anybody can check by eye, and the only test here

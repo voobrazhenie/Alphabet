@@ -66,11 +66,18 @@ matters — checks that the sun switched off is **byte-identical** to a stored
 baseline. `... shadows.mjs base` writes that baseline, and it has to be written from
 a build without the change being tested.
 
-Two traps it already works around, worth knowing before writing another one of
+Three traps it already works around, worth knowing before writing another one of
 these: a WebGL canvas is blank to `drawImage` once composited, so pixels have to
-come from the screenshot; and the frame-time controller keeps moving the render
+come from the screenshot; the frame-time controller keeps moving the render
 scale, so the pose pins it to 0.30 — the controller's floor, and the only value it
-will sit still at under software rendering.
+will sit still at under software rendering; and Chromium hands back an opaque
+canvas as **RGB, not RGBA**, so a decoder that assumes four bytes per pixel turns
+the picture into noise that still looks like a picture. Every number it reports
+was wrong for months because of that one. Read the colour type from the header.
+
+A screenshot is also of the canvas at its CSS size, not its backing store, so
+counting individual pixels means making the two match first — otherwise the
+browser's resampling is what gets counted.
 
 Always check: all three objects still compile and render, and no page errors.
 
