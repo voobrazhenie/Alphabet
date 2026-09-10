@@ -232,7 +232,7 @@ browser's, given the same object and settings.
 | Key | |
 | --- | --- |
 | `space` | Flight and morph together |
-| `L` | Aim the sun with the mouse |
+| `L` | Hand the left drag between the sun and the camera |
 | `M` | Morph |
 | `I` | Impulses |
 | `R` | New viewpoint |
@@ -271,8 +271,9 @@ while it is on, so `A` does not also cycle antialiasing there.
 
 ## 15. The sun and its shadows
 
-Off by default, and off is exact: with **Shadows** unset the key light is the
-one that follows the view, and no shadow ray is cast.
+On by default, and off is exact: with **Shadows** unset the key light is the
+one that follows the view, no shadow ray is cast, and the frame is the one the
+page drew before the sun existed, to the byte.
 
 Switched on, a **sun** takes over as the key light. It stands still in the
 world while the camera moves, which is the whole point — a light fixed to the
@@ -281,7 +282,7 @@ them.
 
 | Control | Range | Default |
 | --- | --- | --- |
-| **Shadows** | off / on | off |
+| **Shadows** | off / on | on |
 | **Sun across** | 0-360 degrees | 52 |
 | **Sun up** | -89 to 89 degrees | 34 |
 | **Softness** | 0-1 | 0.25 |
@@ -289,8 +290,15 @@ them.
 | **Reach** | 0.5-6 units | 3.0 |
 
 A shadow is a second march from the lit surface toward the sun, at most 64
-steps and never further than **Reach**. The closest that ray passes to
-anything, against how far it had travelled, is how much of the sun it hides —
+steps and never further than **Reach**. It steps by the distance the field
+guarantees is clear and judges a near miss by the distance the surface probably
+is — the two are not the same number wherever a warp or the relief is on, and
+stepping by the second one lands the ray inside the surface it set off from,
+which reads as a hit and blackens faces the sun is plainly shining at. It also
+starts further clear of the surface the lower the sun sits on that face, since
+a ray leaving at a shallow angle stays inside the surface's own roughness a
+long way out. The closest that ray passes to anything, against how far it had
+travelled, is how much of the sun it hides —
 so the penumbra comes out of the same march rather than out of more rays.
 **Softness** sets how wide the sun reads: 0 is a point and a hard edge, 1 is a
 broad source. A ray that actually touches the surface is black whatever the
@@ -304,10 +312,17 @@ left alone.
 
 A surface facing away from the sun is already dark and is not marched.
 
-`L` gives the mouse to the sun: dragging swings it around, the camera does not
-move, and the sun is drawn where it stands so it can be aimed by eye. `L` again
-or `Esc` gives the mouse back. Turning the mode on turns **Shadows** on, since
-it would otherwise do nothing that can be seen. The mode itself is not saved.
+The **right** drag turns the camera in every mode, so aiming the light never
+costs the view. The **left** drag belongs to the sun, and does from the moment
+the page opens: swinging it moves the sun and the camera does not budge, and
+the sun is drawn in the sky where it stands so it can be aimed by eye. `L` or
+`Esc` hands the left drag back to the camera, `L` again takes it. Turning the
+mode on turns **Shadows** on, since it would otherwise do nothing that can be
+seen, and the drawn sun goes away with either of them. The mode itself is not
+saved.
+
+A finger has no second button, so on a touch screen every drag is the camera's
+and the sun is aimed with **Sun across** and **Sun up**.
 
 A run with shadows on reports them, because a second ray per lit pixel is not
 the same work as one.

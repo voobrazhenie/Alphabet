@@ -4,8 +4,11 @@
 //   * every object still compiles and draws, with no page errors
 //   * with shadows OFF the image is byte-identical to the baseline — the whole
 //     no-op discipline, and what keeps parity.mjs green
-//   * with shadows ON at full darkness the image changes and reaches real black
-//   * L plus a drag moves the sun and leaves the camera alone
+//   * with shadows ON at full darkness the image changes, reaches real black, and
+//     still matches its own stored shot — the march is easy to make subtly wrong
+//     and the difference is a shape, not a number
+//   * the left drag aims the sun, the right drag always turns the camera, and
+//     L swaps the left one back and forth between them
 //
 // Usage: node shadows.mjs base   -> write baseline shots
 //        node shadows.mjs check  -> compare against them
@@ -47,6 +50,7 @@ async function pose(page, over) {
     // which will not happen here. Start there and nothing moves.
     s.resPin = 1; s.scaleQ = 0.30; s.stepsPin = true; s.steps = 64;
     s.aa = 0;
+    s.velAz = 0; s.velEl = 0;        // a drag leaves inertia behind; the next one starts still
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -162,57 +166,71 @@ const run = async () => {
     });
     say(errors.length === 0, `${o.name}: draws with no page errors (canvas ${size})`);
 
-    if (mode === "check") {
-      const basePath = join(OUT, o.name + "-base.png");
-      if (existsSync(basePath)) {
-        const base = readFileSync(basePath);
-        say(base.equals(off), `${o.name}: shadows off is byte-identical to the baseline`);
+    const compare = (buf, file, what) => {
+      const path = join(OUT, file);
+      if (mode !== "check") {
+        writeFileSync(path, buf);
+        console.log(`--   ${o.name}: wrote ${file}`);
+      } else if (existsSync(path)) {
+        say(readFileSync(path).equals(buf), `${o.name}: ${what}`);
       } else {
-        console.log(`--   ${o.name}: no baseline to compare against`);
+        console.log(`--   ${o.name}: no ${what} to compare against`);
       }
-    } else {
-      writeFileSync(join(OUT, o.name + "-base.png"), off);
-      console.log("--   " + o.name + ": baseline written");
-      continue;
-    }
+    };
+    compare(off, o.name + "-base.png", "shadows off is byte-identical to the baseline");
 
-    // hard, full-strength, aimed across the object
+    // Hard, full strength, and deliberately low: a sun near the horizon is what
+    // makes shadow rays leave at a shallow angle, which is the whole difficulty.
     await pose(page, {
       scene: o.scene, shadowOn: 1, shadowSoft: 0.0, shadowDark: 1.0,
       shadowReach: 4.0, sunAz: 2.2, sunEl: 0.35,
     });
     const on = await shot(page, o.name + "-on");
     say(!on.equals(off), `${o.name}: shadows on changes the image`);
+    compare(on, o.name + "-on-base.png", "the shadows themselves are the stored ones");
 
     const dark = darkFraction(on);
     say(dark > 0.02, `${o.name}: reaches real black (${(dark * 100).toFixed(1)}% of pixels)`);
   }
 
   if (mode === "check") {
-    // L, then drag: the sun moves and the camera does not
+    // Who owns which button. The sun has the left drag from the start, the camera
+    // always has the right one, and L swaps the left one back and forth.
     await pose(page, { scene: 2, shadowOn: 1 });
-    const before = await page.evaluate(() => {
-      const s = window.__state;
-      return { az: s.sunAz, el: s.sunEl, dAz: s.dragAz, dEl: s.dragEl };
-    });
-    await page.keyboard.press("l");
-    const inMode = await page.evaluate(() => !!window.__sunMode);
-    say(inMode, "L enters sun mode");
     const box = await page.locator("canvas").first().boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2 + 40, { steps: 6 });
-    await page.mouse.up();
-    const after = await page.evaluate(() => {
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const look = () => page.evaluate(() => {
       const s = window.__state;
       return { az: s.sunAz, el: s.sunEl, dAz: s.dragAz, dEl: s.dragEl };
     });
-    say(Math.abs(after.az - before.az) > 1e-3, "dragging moves the sun across");
-    say(Math.abs(after.el - before.el) > 1e-3, "dragging moves the sun up and down");
-    say(after.dAz === before.dAz && after.dEl === before.dEl,
-        "and the camera is left exactly where it was");
+    const drag = async (button) => {
+      await page.mouse.move(cx, cy);
+      await page.mouse.down({ button });
+      await page.mouse.move(cx + 90, cy + 40, { steps: 6 });
+      await page.mouse.up({ button });
+    };
+    const inMode = () => page.evaluate(() => !!window.__sunMode);
+
+    say(await inMode(), "sun mode is on out of the box");
+
+    let a = await look(); await drag("left"); let b = await look();
+    say(Math.abs(b.az - a.az) > 1e-3 && Math.abs(b.el - a.el) > 1e-3,
+        "left-drag swings the sun");
+    say(b.dAz === a.dAz && b.dEl === a.dEl, "and the camera is left exactly where it was");
+
+    await pose(page, { scene: 2, shadowOn: 1 });
+    a = await look(); await drag("right"); b = await look();
+    say(b.dAz !== a.dAz && b.dEl !== a.dEl, "right-drag turns the camera even so");
+    say(b.az === a.az && b.el === a.el, "and the sun stays where it was put");
+
     await page.keyboard.press("l");
-    say(!(await page.evaluate(() => !!window.__sunMode)), "L leaves sun mode again");
+    say(!(await inMode()), "L hands the left button back to the camera");
+    await pose(page, { scene: 2, shadowOn: 1 });
+    a = await look(); await drag("left"); b = await look();
+    say(b.dAz !== a.dAz, "left-drag turns the camera once the sun has let go");
+    say(b.az === a.az && b.el === a.el, "and the sun does not move with it");
+    await page.keyboard.press("l");
+    say(await inMode(), "L takes it back again");
   }
 
   if (errors.length) {
