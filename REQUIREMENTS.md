@@ -74,8 +74,10 @@ Four folding groups, plus an ungrouped footer.
 - **Rendering** — Resolution, Antialiasing, Uncapped.
 - **Shadows** — the Shadows switch, where the sun stands, and how its shadows
   fall. See §15.
-- **Material** — the MatCap switch, which sphere it uses, and loading more of
-  them. See §16.
+- **Material** — the MatCap switch, which sphere it uses, loading more of them,
+  and the normal map. See §16 and §20.
+- **Transparency** — whether the eye goes through the surface, and what it
+  finds on the way. See §21.
 - **Post** — what happens to the finished frame. See §17.
 - **UI** — how the console itself looks. See §19.
 - Footer — Benchmark, Save as default / Reset, and two status lines.
@@ -432,8 +434,11 @@ fetch and no lights at all.
 | **Keep** | Hold on to the chosen sphere — in this browser, and in the cloud so it follows the page to another computer. The two built-in ones are already there. |
 | **Delete** | Remove the chosen sphere from both. The built-in two stay. |
 
-The same list feeds the **Shadow sphere** picker in §15, so a sphere loaded once
-can be used as a material, as a shadow, or as both.
+The same list feeds the **Shadow sphere** picker in §15 and the **Map** picker
+in §20, so an image loaded once can be used as a material, as a shadow, as a
+normal map, or as all three. **Add** in §20 is the same loader; it differs only
+in which of the three the new image lands in, and each of the two groups keeps
+and deletes what its own chooser is pointing at.
 
 Switched on it **replaces the material outright**: no key light, no sun, no
 shadow ray, no rim, no specular. Fog and the volumetric glow still apply — they
@@ -520,3 +525,92 @@ being how fast the render actually is. The picture tears — that is the trade �
 and a benchmark run says which one it was. Only one loop ever runs: switching
 clocks invalidates whatever was in flight on the old one rather than starting a
 second chain beside it.
+
+## 20. Normal map
+
+An image laid over the surface as a normal map: it moves the normal itself and
+nothing else, so the matcap lookup, the sun, the shadow and the rim all pick the
+detail up together and agree about it.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Normal map** | off / on | off |
+| **Map** | which image, from the one shared list of §16 | Chrome |
+| **Add / Keep / Delete** | as §16, but on the chosen **map** rather than the chosen sphere | |
+| **Amount** | 0-1 | 1.00 |
+| **Scale** | 0.10-16 | 2.00 |
+
+Off is exact: not a texel is read. **Amount** at nothing is exact too — the
+normal is handed straight back rather than being put through a `normalize` that
+could move its last digit — so the slider covers the whole range with no step
+at either end of it.
+
+An SDF has no seams to unwrap, so the map is projected **down all three axes**
+and the three readings blended by how square-on the surface is to that axis, to
+the fourth power, so a face that clearly belongs to one plane is not muddied by
+the other two. The blend is the whiteout one: the map's sideways push is added
+to the surface's own normal before the three are summed, which keeps detail
+through the blend instead of averaging it flat where the planes meet.
+
+Tiling is **mirrored** rather than wrapped, so any image at all repeats without
+a seam whatever its size — a photograph that was never made to tile included.
+
+**Add** loads into the same list §16 keeps, and this group has its own **Keep**
+and **Delete** so an image loaded as a normal map can be held on to without
+having to be the material as well. Removing an image slides every picker that
+pointed past it back with it, so none of the three is ever left pointing at the
+wrong thing.
+
+## 21. Transparency
+
+The eye does not have to stop at the surface. It bends into the body, takes the
+body's colour on over the distance the crossing costs it, and ends on whatever
+lies beyond — the far wall, the next object, or the sky.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Transparent** | off / on | off |
+| **Opacity** | 0-1 | 0.15 |
+| **Edge** | 0-1 | 0.60 |
+| **Refraction** | 1.00-2.50 | 1.45 |
+| **Tint** | any colour | #BFE9FF |
+| **Density** | 0-4 | 0.90 |
+| **Depth** | 1-4 | 2 |
+
+Off is exact: not one extra ray is cast and the frame is the one it always was.
+**Opacity at 1** is exact as well — the surface keeps all of itself and nothing
+goes on through — so the slider covers the whole range with a real solid at the
+top of it.
+
+**Opacity** is how much of the surface still shows *square on*. **Edge** is how
+much of it comes back at a grazing angle, by Fresnel: that second term is the
+part that reads as glass rather than as a faded object, and turning it off gives
+a flat film instead.
+
+**Refraction** bends the view on the way in and straightens it on the way out —
+1.00 straight through, 1.33 water, 1.52 glass, 2.42 diamond. Where the angle is
+too shallow to leave by, the ray reflects off the inside of the wall instead,
+which is what makes a thick edge go bright.
+
+**Tint** and **Density** are Beer's law, written as the tint raised to the
+distance crossed: the colour is what survives one unit of body, so white is
+water, and anything else deepens the further the crossing had to go. Density at
+0 is perfectly clear whatever the tint is.
+
+**Depth** is how many surfaces the eye may see through. 1 is the front face and
+the sky behind it; 2 adds the far wall; 3 and 4 reach whatever stands beyond the
+object. Each one costs another march, and that is where the whole cost of this
+is — off, there is none.
+
+Inside the body the field is negative and its size is still the distance to the
+nearest wall, so the same safe step works with the sign turned round: the
+crossing is sphere traced from the inside and stops the moment the field comes
+back up to nothing. Rays after the first are traced plainly — no over-relaxation
+and no volumetric glow, both of which the pixel's first ray has already paid
+for — and they share out half the ray-step budget rather than each taking it
+whole.
+
+Shadows are unaffected: a shadow ray still treats everything as solid, so a
+see-through object throws the shadow of a solid one. The lit-versus-unlit view
+(§15) ignores transparency too, because what it is drawing is the shadow term
+and not the object.

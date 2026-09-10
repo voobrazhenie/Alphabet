@@ -62,6 +62,9 @@ async function pose(page, over) {
     // that keeps "the sun switched off is the page as it was" a live claim
     // about the shading rather than a claim about the grain.
     s.noise = 1.0; s.shadowOnly = 0; s.shadowSteps = 96;
+    s.normalOn = 0; s.normalMc = 0; s.normalAmt = 1.0; s.normalScale = 2.0;
+    s.glassOn = 0; s.glassOpacity = 0.15; s.glassEdge = 0.60; s.glassIor = 1.45;
+    s.glassTint = "#BFE9FF"; s.glassDensity = 0.90; s.glassDepth = 2;
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -318,6 +321,56 @@ const run = async () => {
         "and is switched on and selected");
     const drawn = await shot(page, "matcap-loaded");
     say(!drawn.equals(mcA) && !drawn.equals(mcB), "and the object is drawn with it");
+  }
+
+  // The normal map and seeing through things. Both are off out of the box and
+  // both have an exact no-op inside them — Amount at nothing, Opacity at one —
+  // which is the half of each that a picture cannot show.
+  if (mode === "check") {
+    const base = join(OUT, "chrome-base.png");
+    const off = existsSync(base) ? readFileSync(base) : null;
+    const flat = { scene: 2, shadowOn: 0 };
+
+    // the magenta square loaded above is still in the list, and the normal-map
+    // chooser is fed by that same one list
+    const maps = await page.evaluate(() =>
+      Array.prototype.map.call(document.querySelectorAll("#nmSeg button"), b => b.textContent));
+    say(maps.length === 3 && maps[2] === "loaded",
+        `the normal map picks from the same list (${maps.join(", ")})`);
+
+    await pose(page, { ...flat, normalOn: 1, normalMc: 1, normalScale: 2.0 });
+    const bumped = await shot(page, "normal-on");
+    if (off) say(!bumped.equals(off), "a normal map moves the surface");
+    await pose(page, { ...flat, normalOn: 1, normalMc: 1, normalScale: 9.0 });
+    say(!(await shot(page, "normal-fine")).equals(bumped), "and Scale changes how fine it is");
+    await pose(page, { ...flat, normalOn: 1, normalMc: 1, normalAmt: 0.0 });
+    if (off) say((await shot(page, "normal-none")).equals(off),
+                 "and Amount at nothing is byte-identical to the baseline");
+
+    await pose(page, { ...flat, glassOn: 1, glassOpacity: 1.0 });
+    if (off) say((await shot(page, "glass-solid")).equals(off),
+                 "Opacity at 1 is byte-identical to a solid object");
+
+    // nothing of its own left, no bending and no colour: the object should be
+    // very nearly the background it is standing in front of
+    await pose(page, { ...flat, glassOn: 1, glassOpacity: 0.0, glassEdge: 0.0,
+                       glassDensity: 0.0, glassIor: 1.0, glassDepth: 1 });
+    const clear = await shot(page, "glass-clear");
+    if (off) {
+      const d = darkened(off, clear, 20);
+      say(d > 0.05, `clear through to the background takes the object out (${(d * 100).toFixed(1)}%)`);
+    }
+
+    await pose(page, { ...flat, glassOn: 1, glassDepth: 2 });
+    const two = await shot(page, "glass-depth-2");
+    say(!two.equals(clear), "tint, edge and refraction all land");
+    await pose(page, { ...flat, glassOn: 1, glassDepth: 4 });
+    say(!(await shot(page, "glass-depth-4")).equals(two), "and Depth changes how far the eye gets");
+    await pose(page, { ...flat, glassOn: 1, glassDepth: 2, glassIor: 1.0 });
+    say(!(await shot(page, "glass-straight")).equals(two), "and Refraction bends what is behind");
+    await pose(page, { ...flat, glassOn: 1, glassDepth: 2, glassDensity: 4.0 });
+    const thick = await shot(page, "glass-dense");
+    say(!thick.equals(two), "and Density deepens the tint with the crossing");
   }
 
   // The cube is the one shadow anybody can check by eye, and the only test here
