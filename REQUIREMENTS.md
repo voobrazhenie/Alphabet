@@ -289,11 +289,12 @@ them.
 | --- | --- | --- | --- |
 | **Shadows** | off / on | on | all |
 | **Lit / unlit** | off / on | off | all — draws the shadow term itself, white where the sun reaches and black where it does not, with no material at all |
-| **How** | Ray march / Sphere / Sun angle | Ray march | — |
+| **How** | March / Trace / Sphere / Sun | March | — |
 | **Sun across** | 0-360 degrees | 52 | all — the sun is the key light in every mode |
 | **Sun up** | -89 to 89 degrees | 34 | all |
 | **Softness** | 0-1 | 0.25 | ray march |
-| **Reach** | 0.5-6 units | 3.0 | ray march |
+| **Reach** | 0.5-6 units | 3.0 | march, trace |
+| **Shadow steps** | 8-128 | 96 | march, trace |
 | **Shadow sphere** | any loaded sphere | Chrome | sphere |
 | **Level** | 0-1 | 0.50 | all |
 | **Contrast** | 0-1 | 0.00 | all |
@@ -306,9 +307,14 @@ black — and all three go through the same shaping and the same application, so
 the controls mean the same thing in each and switching between them is a fair
 comparison.
 
-- **Ray march** — a second march from the lit surface toward the sun. The only
-  one that can throw a shadow from one thing onto another, and the only one that
-  costs a ray.
+- **March** — a second sphere-traced march from the lit surface toward the sun,
+  with a soft edge out of how close it passed. Throws a shadow from one thing
+  onto another.
+- **Trace** — the same line, walked in even steps, asking at each one whether it
+  is inside anything. Nothing is sphere traced, so the warp's Lipschitz bound
+  cannot slow it to a crawl and there is no budget to run out of: the cost is
+  exactly **Shadow steps**, whatever the scene is doing. No near-miss either, so
+  no penumbra and no grey — occluded or not. **Softness** does not apply.
 - **Sphere** — the brightness of a painted sphere, read the same way a matcap
   is (§16), in linear light. Whatever is painted on it lands on the object, for
   one texture fetch. It cannot know about anything else in the scene.
@@ -367,9 +373,11 @@ and that bound can be twenty-something. A ray that only ever takes those steps
 never arrives: it spends its whole budget in the first tenth of a unit and gives
 up — and giving up reads as **lit**, which is light leaking through the middle of
 a shadow. Both ways of failing leak light, so the step also grows with how far
-the ray has come, by 8% each time, which is what it takes for ninety-six of them
-to cross the whole **Reach** whatever the warp is doing. Measured on a warped
-scene, that took rays that ran out of budget from 45% to none.
+the ray has come — by however much it takes for the budget it has been given to
+cross the whole **Reach** whatever the warp is doing, worked out from those two
+sliders once per frame rather than per pixel. Measured on a warped scene, rays
+that ran out of budget went from 45% to none, and stay at none at 16, 32, 96 and
+128 steps.
 
 ## The sun's own view
 
@@ -480,7 +488,19 @@ width is.
 
 A group's header is a filled bar in the accent colour with dark text on it, and
 what the group holds sits in from that bar, so the shape of the thing is legible
-without reading a word of it.
+without reading a word of it. There is more air on the right, between the content
+and the scroll bar, than on the left.
+
+**There are no hints.** The line at the foot appears only to say that something
+happened — a view stored, a sphere kept — and goes away again.
+
+**Buttons fill a row and wrap only when they cannot.** Each carries its own
+border with a gap around it, so two side by side always read as two; a shared
+edge stops doing that the moment a row wraps. A label that will not fit is
+trimmed on one line rather than broken mid-word or stacked a letter at a time —
+widen the menu and the whole word comes back.
+
+**Font size** drives the statistics panel as well as the console.
 
 | Control | Range | Default |
 | --- | --- | --- |

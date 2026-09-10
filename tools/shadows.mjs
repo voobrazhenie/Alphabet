@@ -61,7 +61,7 @@ async function pose(page, over) {
     // baselines were taken before it existed, so the pose turns it back on:
     // that keeps "the sun switched off is the page as it was" a live claim
     // about the shading rather than a claim about the grain.
-    s.noise = 1.0; s.shadowOnly = 0;
+    s.noise = 1.0; s.shadowOnly = 0; s.shadowSteps = 96;
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -255,6 +255,7 @@ const run = async () => {
     const shots = [];
     for (const [name, over] of [
       ["ray march", { shadowSrc: 0, shadowLevel: 0.50 }],
+      ["ray trace", { shadowSrc: 3, shadowLevel: 0.50 }],
       ["sphere",    { shadowSrc: 1, shadowLevel: 0.50, shadowMc: 0 }],
       ["sun angle", { shadowSrc: 2, shadowLevel: 0.76 }],
     ]) {
@@ -269,8 +270,17 @@ const run = async () => {
       const d = darkened(none, full, 40);
       say(d > 0.01, `${name}, full contrast and amount, really darkens (${(d * 100).toFixed(1)}%)`);
     }
-    say(!shots[0].equals(shots[1]) && !shots[1].equals(shots[2]) && !shots[0].equals(shots[2]),
-        "and the three are three answers, not one in three hats");
+    let same = 0;
+    for (let i = 0; i < shots.length; i++)
+      for (let j = i + 1; j < shots.length; j++) if (shots[i].equals(shots[j])) same++;
+    say(same === 0, `and the ${shots.length} are ${shots.length} answers, not one in ${shots.length} hats`);
+
+    // the budget is a control now, and it has to be one that does something
+    await pose(page, { ...rig, shadowSrc: 0, shadowDark: 1.0, shadowSteps: 12 });
+    const few = await shot(page, "shadow-steps-few");
+    await pose(page, { ...rig, shadowSrc: 0, shadowDark: 1.0, shadowSteps: 128 });
+    say(!few.equals(await shot(page, "shadow-steps-many")),
+        "and the shadow step budget changes what the march finds");
   }
 
   // A matcap replaces the material outright, so there are only two things worth
