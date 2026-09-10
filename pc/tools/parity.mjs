@@ -190,6 +190,9 @@ const renderPair = async ([webSrc, portSrc, u, W, H]) => {
       set("uEps", "uniform1f", u.eps);
       set("uOmega", "uniform1f", u.omega);
       set("uBound", "uniform1f", u.bound);
+      // the page can turn its film grain off; the port has no control for it, so
+      // the comparison is made with the page's grain switched on to match
+      set("uNoise", "uniform1f", 1.0);
       set("uBoundPad", "uniform1f", u.boundPad);
       set("uWarpMode", "uniform1f", u.warpMode);
       const web = draw();

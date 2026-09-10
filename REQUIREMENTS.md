@@ -76,6 +76,7 @@ Four folding groups, plus an ungrouped footer.
   fall. See §15.
 - **Material** — the MatCap switch, which sphere it uses, and loading more of
   them. See §16.
+- **Post** — what happens to the finished frame. See §17.
 - Footer — Benchmark, Save as default / Reset, and two status lines.
 
 Controls that belong to one object only are shown only for that object. Which
@@ -235,6 +236,7 @@ browser's, given the same object and settings.
 | --- | --- |
 | `space` | Flight and morph together |
 | `L` | Hand the left drag between the sun and the camera |
+| `*` | Stand where the sun does, and come back |
 | `M` | Morph |
 | `I` | Impulses |
 | `R` | New viewpoint |
@@ -285,6 +287,7 @@ them.
 | Control | Range | Default | Applies to |
 | --- | --- | --- | --- |
 | **Shadows** | off / on | on | all |
+| **Lit / unlit** | off / on | off | all — draws the shadow term itself, white where the sun reaches and black where it does not, with no material at all |
 | **How** | Ray march / Sphere / Sun angle | Ray march | — |
 | **Sun across** | 0-360 degrees | 52 | all — the sun is the key light in every mode |
 | **Sun up** | -89 to 89 degrees | 34 | all |
@@ -312,6 +315,15 @@ comparison.
   whole range. No ray and no texture: a dot product. It cannot throw a shadow
   onto anything else either, but it turns with the sun and with **Contrast** up
   it draws a hard terminator wherever it is aimed.
+
+For **Sphere** and **Sun angle** the console draws the result on a small sphere
+beside the controls, after Level, Contrast and Amount — so what the sliders are
+doing can be read straight off rather than hunted for on whichever part of the
+object happens to point the right way.
+
+Whichever source is chosen, the shadow also sits over a **MatCap** material
+(§16) when both are on: the sphere is a picture, so it is multiplied in display
+terms.
 
 **Level** slides the edge between light and shadow; **Contrast** squeezes the
 ramp around it until it is a step. That is where a soft grey shadow becomes a
@@ -345,7 +357,28 @@ light — so at 1 a fully shadowed pixel is black, and at 0 nothing changes at
 all. The glow is gathered along the view ray rather than at the surface, and is
 left alone.
 
-A surface facing away from the sun is already dark and is not marched.
+A surface facing away from the sun has no sun on it, which is what being in
+shadow means — so it is in shadow, at once and without a ray. That is what makes
+an object shadow itself rather than merely shade itself.
+
+A shadow ray's step is the true distance divided by the warp's Lipschitz bound,
+and that bound can be twenty-something. A ray that only ever takes those steps
+never arrives: it spends its whole budget in the first tenth of a unit and gives
+up — and giving up reads as **lit**, which is light leaking through the middle of
+a shadow. Both ways of failing leak light, so the step also grows with how far
+the ray has come, by 8% each time, which is what it takes for ninety-six of them
+to cross the whole **Reach** whatever the warp is doing. Measured on a warped
+scene, that took rays that ran out of budget from 45% to none.
+
+## The sun's own view
+
+`*` stands the camera where the sun is and looks back along it, and switches the
+projection to **parallel** at the same time — the sun is a direction and not a
+place, so a perspective eye put at one would show a view no shadow in this scene
+was ever worked out from. From there nothing can be seen in shadow, which is the
+point of it: it is what the sun sees. Dragging moves the sun, the wheel widens
+the view, and `*` or `Esc` gives the camera back exactly as it was, because
+nothing about it was touched.
 
 The **right** drag turns the camera in every mode, so aiming the light never
 costs the view. The **left** drag belongs to the sun, and does from the moment
@@ -415,3 +448,23 @@ sphere, because an image will not fit alongside the settings. On opening, the
 browser's copies land first and the cloud's are merged in by id, so a sphere
 kept on another machine arrives without doubling up one already here. The saved
 defaults carry which sphere was chosen, never the image.
+
+## 17. Post
+
+What happens to the frame after the object is drawn.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Noise** | 0-2 | 0.00 |
+
+**Noise** is film grain, laid on last, per pixel and per frame. It used to be on
+at a fixed strength and there was no way to turn it off; it is now off unless it
+is asked for. The native port has no control for it, so `pc/tools/parity.mjs`
+compares the two shaders with the page's grain switched back on.
+
+## 18. Typing a value
+
+Every slider's reading can be clicked and typed into. The slider is a
+convenience and not the range: what is typed is taken as it is, even when the
+thumb has to sit at one end to show it, so a value past either end of a slider
+is reached by typing it. `Enter` commits, `Esc` puts the old reading back.

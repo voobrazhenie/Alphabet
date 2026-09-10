@@ -57,6 +57,11 @@ async function pose(page, over) {
     // cube rig turns build steps off and the warp down, and the next case along
     // then quietly compares a different object with the baseline.
     s.lcOn = [1, 1, 1, 1, 1, 0]; s.warpOn = [1, 0, 0]; s.warpAmt = 0.74;
+    // The film grain has a control now and it is off by default. The stored
+    // baselines were taken before it existed, so the pose turns it back on:
+    // that keeps "the sun switched off is the page as it was" a live claim
+    // about the shading rather than a claim about the grain.
+    s.noise = 1.0; s.shadowOnly = 0;
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -205,6 +210,34 @@ const run = async () => {
     const on = await shot(page, o.name + "-on");
     say(!on.equals(off), `${o.name}: shadows on changes the image`);
     compare(on, o.name + "-on-base.png", "the shadows themselves are the stored ones");
+  }
+
+  // The grain, the lit/unlit view and standing where the sun does. None of the
+  // three is subtle, so the useful thing to hold them to is that each does
+  // something and that the last one gives the camera back untouched.
+  if (mode === "check") {
+    await pose(page, { scene: 2, shadowOn: 0 });
+    const grainy = await shot(page, "noise-on");
+    await pose(page, { scene: 2, shadowOn: 0, noise: 0.0 });
+    say(!(await shot(page, "noise-off")).equals(grainy), "the noise slider changes the frame");
+
+    await pose(page, { scene: 2, shadowOn: 1 });
+    const normal = await shot(page, "sunview-off");
+    const cam = () => page.evaluate(() => {
+      const s = window.__state;
+      return JSON.stringify([s.dragAz, s.dragEl, s.zoom, s.fly, s.mode]);
+    });
+    const before = await cam();
+    await page.keyboard.press("NumpadMultiply");
+    say(await page.evaluate(() => !!window.__sunView), "* stands the camera where the sun is");
+    say(!(await shot(page, "sunview-on")).equals(normal), "and the view is not the one it left");
+    await page.keyboard.press("NumpadMultiply");
+    say(!(await page.evaluate(() => !!window.__sunView)), "* gives the camera back");
+    say((await cam()) === before, "with nothing about it changed");
+
+    await pose(page, { scene: 2, shadowOn: 1, shadowOnly: 1, shadowSrc: 2,
+                       shadowContrast: 1.0, shadowLevel: 0.60 });
+    say(!(await shot(page, "lit-unlit")).equals(normal), "the lit / unlit view draws the shadow itself");
   }
 
   // Three ways to arrive at a shadow. Only the first spends a ray; all three go
