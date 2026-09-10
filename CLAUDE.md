@@ -58,8 +58,19 @@ update it in the same commit when behaviour changes.
 Headless Chromium with SwiftShader, driven by Playwright:
 
 ```
-node <script>.mjs   # args: --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader
+NODE_PATH=/opt/node22/lib/node_modules node tools/shadows.mjs check
 ```
+
+It draws all three objects, checks there are no page errors, and — the part that
+matters — checks that the sun switched off is **byte-identical** to a stored
+baseline. `... shadows.mjs base` writes that baseline, and it has to be written from
+a build without the change being tested.
+
+Two traps it already works around, worth knowing before writing another one of
+these: a WebGL canvas is blank to `drawImage` once composited, so pixels have to
+come from the screenshot; and the frame-time controller keeps moving the render
+scale, so the pose pins it to 0.30 — the controller's floor, and the only value it
+will sit still at under software rendering.
 
 Always check: all three objects still compile and render, and no page errors.
 

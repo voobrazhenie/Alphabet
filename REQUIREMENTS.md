@@ -64,7 +64,7 @@ in. Slots are part of "Save as default".
 
 ## 5. Console
 
-Three folding groups, plus an ungrouped footer.
+Four folding groups, plus an ungrouped footer.
 
 - **Construction** — Object, Navigation, Flight path.
 - **Object modifications** — the chrome build steps and their sliders, ray
@@ -72,6 +72,8 @@ Three folding groups, plus an ungrouped footer.
   domain warp, noise warp mode, warp strength and scale, line width, spike rate,
   colours, and the Flight / Morph / Impulses toggles.
 - **Rendering** — Resolution, Antialiasing.
+- **Shadows** — the Shadows switch, where the sun stands, and how its shadows
+  fall. See §15.
 - Footer — Benchmark, Save as default / Reset, and two status lines.
 
 Controls that belong to one object only are shown only for that object. Which
@@ -230,6 +232,7 @@ browser's, given the same object and settings.
 | Key | |
 | --- | --- |
 | `space` | Flight and morph together |
+| `L` | Aim the sun with the mouse |
 | `M` | Morph |
 | `I` | Impulses |
 | `R` | New viewpoint |
@@ -265,3 +268,46 @@ while it is on, so `A` does not also cycle antialiasing there.
 - The post pass still runs when antialiasing is off (a plain resolve).
 - A pinned resolution can still be given up if the frame time becomes
   untenable (over 250 ms), and does not climb back on its own while pinned.
+
+## 15. The sun and its shadows
+
+Off by default, and off is exact: with **Shadows** unset the key light is the
+one that follows the view, and no shadow ray is cast.
+
+Switched on, a **sun** takes over as the key light. It stands still in the
+world while the camera moves, which is the whole point — a light fixed to the
+view throws its shadows behind the things that cast them, where nobody can see
+them.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Shadows** | off / on | off |
+| **Sun across** | 0-360 degrees | 52 |
+| **Sun up** | -89 to 89 degrees | 34 |
+| **Softness** | 0-1 | 0.25 |
+| **Darkness** | 0-1 | 0.85 |
+| **Reach** | 0.5-6 units | 3.0 |
+
+A shadow is a second march from the lit surface toward the sun, at most 64
+steps and never further than **Reach**. The closest that ray passes to
+anything, against how far it had travelled, is how much of the sun it hides —
+so the penumbra comes out of the same march rather than out of more rays.
+**Softness** sets how wide the sun reads: 0 is a point and a hard edge, 1 is a
+broad source. A ray that actually touches the surface is black whatever the
+softness says, so a sharp shadow is properly black and not merely dark.
+
+**Darkness** is how much a shadow is allowed to take. It scales the key light
+and the highlight, and by the same amount the fill, the rim and the back
+light — so at 1 a fully shadowed pixel is black, and at 0 nothing changes at
+all. The glow is gathered along the view ray rather than at the surface, and is
+left alone.
+
+A surface facing away from the sun is already dark and is not marched.
+
+`L` gives the mouse to the sun: dragging swings it around, the camera does not
+move, and the sun is drawn where it stands so it can be aimed by eye. `L` again
+or `Esc` gives the mouse back. Turning the mode on turns **Shadows** on, since
+it would otherwise do nothing that can be seen. The mode itself is not saved.
+
+A run with shadows on reports them, because a second ray per lit pixel is not
+the same work as one.
