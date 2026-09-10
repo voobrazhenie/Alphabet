@@ -71,12 +71,13 @@ Four folding groups, plus an ungrouped footer.
   steps, surface precision, step relaxation, bounds and padding, cell density,
   domain warp, noise warp mode, warp strength and scale, line width, spike rate,
   colours, and the Flight / Morph / Impulses toggles.
-- **Rendering** — Resolution, Antialiasing.
+- **Rendering** — Resolution, Antialiasing, Uncapped.
 - **Shadows** — the Shadows switch, where the sun stands, and how its shadows
   fall. See §15.
 - **Material** — the MatCap switch, which sphere it uses, and loading more of
   them. See §16.
 - **Post** — what happens to the finished frame. See §17.
+- **UI** — how the console itself looks. See §19.
 - Footer — Benchmark, Save as default / Reset, and two status lines.
 
 Controls that belong to one object only are shown only for that object. Which
@@ -468,3 +469,34 @@ Every slider's reading can be clicked and typed into. The slider is a
 convenience and not the range: what is typed is taken as it is, even when the
 thumb has to sit at one end to show it, so a value past either end of a slider
 is reached by typing it. `Enter` commits, `Esc` puts the old reading back.
+
+## 19. The console itself
+
+It is fixed to the top right and flush with three edges of the window — no
+margin at the top, the right or the bottom — and it is narrow: about half what
+it used to be. **Its left edge is a handle**: drag it to set the width, between
+120 and 680 pixels. The rest of the interface keeps clear of whatever that
+width is.
+
+A group's header is a filled bar in the accent colour with dark text on it, and
+what the group holds sits in from that bar, so the shape of the thing is legible
+without reading a word of it.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Font size** | 8-26 px | 12 |
+| **Opacity** | 0-1 | 0.94 |
+| **Background** | any colour | #04070c |
+| **Colour** | any colour | #2fd9c0 |
+
+Each writes one CSS custom property and nothing else knows about it: the font
+size is the console's own `font-size` and every size inside it is in `em`; the
+colour is the accent the whole console is drawn from; background and opacity
+together are the panel fill.
+
+**Uncapped** (in Rendering) hands the draw loop to a timer instead of the
+display's own beat, so the frame rate stops being the refresh rate and starts
+being how fast the render actually is. The picture tears — that is the trade —
+and a benchmark run says which one it was. Only one loop ever runs: switching
+clocks invalidates whatever was in flight on the old one rather than starting a
+second chain beside it.
