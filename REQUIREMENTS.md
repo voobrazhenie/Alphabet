@@ -380,7 +380,7 @@ point of it: it is what the sun sees. Dragging moves the sun, the wheel widens
 the view, and `*` or `Esc` gives the camera back exactly as it was, because
 nothing about it was touched.
 
-The **right** drag turns the camera in every mode, so aiming the light never
+Dragging the sun follows the mouse: down takes it down. The **right** drag turns the camera in every mode, so aiming the light never
 costs the view. The **left** drag belongs to the sun, and does from the moment
 the page opens: swinging it moves the sun and the camera does not budge, and
 the sun is drawn in the sky where it stands so it can be aimed by eye. `L` or
