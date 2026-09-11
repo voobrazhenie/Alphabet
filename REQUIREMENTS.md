@@ -84,7 +84,7 @@ colour, which is what makes the left column scannable.
 | **Material** | MatCap and its sphere, the normal map and its. See §16 and §20 |
 | **Depth map** | an image thrown at one part of the object, and the gizmo that aims it. See §24 |
 | **Transparency** | whether the eye goes through the surface, and what it finds. See §21 |
-| **Post** | what happens to the finished frame. See §17 |
+| **Post** | the air the object stands in, and what happens to the finished frame. See §17 |
 | **UI** | how the console itself looks, and Arrange. See §19 and §22 |
 | **Templates** | whole settings under a name. See §23 |
 | Footer | Benchmark, Save as default / Reset, and two status lines |
@@ -489,11 +489,23 @@ defaults carry which sphere was chosen, never the image.
 
 ## 17. Post
 
-What happens to the frame after the object is drawn.
+The air the object stands in, and what happens to the frame after it is drawn.
 
 | Control | Range | Default |
 | --- | --- | --- |
+| **Haze** | 0-3 | 1.00 |
 | **Noise** | 0-2 | 0.00 |
+
+**Haze** is the distance fade: whatever is further from the eye is blended
+toward the background, which is what makes depth read as depth rather than as a
+flat cut-out. Each object was given the thickness that suited it — the brain's
+air is more than twice the chrome's — and the slider **multiplies** that rather
+than replacing it, so every object keeps its own character across the whole
+range. **1.00 is the page exactly as it was**, to the byte, and at **nothing**
+the air is perfectly clear and the far side of the object comes back.
+
+It is not the same thing as the glow, which is added around the surfaces rather
+than laid over the distance, and which follows the **Spike rate**.
 
 **Noise** is film grain, laid on last, per pixel and per frame. It used to be on
 at a fixed strength and there was no way to turn it off; it is now off unless it

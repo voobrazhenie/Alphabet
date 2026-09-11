@@ -61,7 +61,7 @@ async function pose(page, over) {
     // baselines were taken before it existed, so the pose turns it back on:
     // that keeps "the sun switched off is the page as it was" a live claim
     // about the shading rather than a claim about the grain.
-    s.noise = 1.0; s.shadowOnly = 0; s.shadowSteps = 96;
+    s.noise = 1.0; s.haze = 1.0; s.shadowOnly = 0; s.shadowSteps = 96;
     s.normalOn = 0; s.normalMc = 0; s.normalAmt = 1.0; s.normalScale = 2.0;
     s.glassOn = 0; s.glassOpacity = 0.15; s.glassEdge = 0.60; s.glassIor = 1.45;
     s.glassTint = "#BFE9FF"; s.glassDensity = 0.90; s.glassDepth = 2;
@@ -374,6 +374,21 @@ const run = async () => {
     await pose(page, { ...flat, glassOn: 1, glassDepth: 2, glassDensity: 4.0 });
     const thick = await shot(page, "glass-dense");
     say(!thick.equals(two), "and Density deepens the tint with the crossing");
+
+    // The air the object stands in. The slider multiplies each object's own
+    // thickness, so 1.00 has to be the page exactly as it was.
+    await pose(page, { ...flat, haze: 1.0 });
+    if (off) say((await shot(page, "haze-one")).equals(off),
+                 "Haze at 1 is byte-identical to the baseline");
+    await pose(page, { ...flat, haze: 0.0 });
+    const clearAir = await shot(page, "haze-none");
+    if (off) say(!clearAir.equals(off), "and at nothing the air clears");
+    await pose(page, { ...flat, haze: 3.0 });
+    const thickAir = await shot(page, "haze-thick");
+    // end to end, and in the right direction: thicker air takes the far side of
+    // the object toward the background it is standing in front of
+    const d = darkened(clearAir, thickAir, 6);
+    say(d > 0.03, `and thickening it takes the distance away (${(d * 100).toFixed(1)}% of the frame)`);
 
     // The depth decal. A beam with no bite in it has to cost the march nothing
     // whatsoever: its bounding box is evaluated per sample and a box that only

@@ -193,6 +193,11 @@ const renderPair = async ([webSrc, portSrc, u, W, H]) => {
       // the page can turn its film grain off; the port has no control for it, so
       // the comparison is made with the page's grain switched on to match
       set("uNoise", "uniform1f", 1.0);
+      // Same story as the grain: the port has no control for the air's
+      // thickness, so the page is pinned to the multiple that means "as it has
+      // always been". An unset uniform is zero, which would take the fog off
+      // the page entirely and make every case differ.
+      set("uHaze", "uniform1f", 1.0);
       set("uBoundPad", "uniform1f", u.boundPad);
       set("uWarpMode", "uniform1f", u.warpMode);
       const web = draw();
