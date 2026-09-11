@@ -18,10 +18,12 @@ only the built page, and this document lives here.
 - Two passes. The scene is marched into an offscreen target, then a post pass
   puts it on screen — FXAA, or a plain resolve that lets the bilinear filter
   down-sample a 2x target.
-- One shader program per object, compiled the first time that object is shown.
-  Link status is checked: ANGLE translates GLSL to HLSL at link time, so a
-  shader that compiles can still fail. A failure retries once with a shorter
-  march before the object is marked unavailable.
+- One shader program per object **and per set of switched-on features**, built
+  the first time that combination is asked for and then kept. See §26. Link
+  status is checked: ANGLE translates GLSL to HLSL at link time, so a shader
+  that compiles can still fail. A failure retries once with a shorter march;
+  a feature set that will not build falls back to the plain one, and only an
+  object whose plainest build fails is marked unavailable.
 
 ## 2. Objects
 
@@ -494,6 +496,7 @@ The air the object stands in, and what happens to the frame after it is drawn.
 | Control | Range | Default |
 | --- | --- | --- |
 | **Haze** | 0-3 | 1.00 |
+| **Glow** | 0-4 | 1.00 |
 | **Noise** | 0-2 | 0.00 |
 
 **Haze** is the distance fade: whatever is further from the eye is blended
@@ -504,8 +507,18 @@ than replacing it, so every object keeps its own character across the whole
 range. **1.00 is the page exactly as it was**, to the byte, and at **nothing**
 the air is perfectly clear and the far side of the object comes back.
 
-It is not the same thing as the glow, which is added around the surfaces rather
-than laid over the distance, and which follows the **Spike rate**.
+It is not the same thing as the **Glow**, which is added around the surfaces
+rather than laid over the distance.
+
+**Glow** is the light that gathers near a surface. It is summed as the ray
+marches, **one reading per step**, so anything that makes the march take smaller
+steps — a domain warp, or a depth map's beam — gathers more of it over the same
+distance and fills that volume with a soft veil. That is an accident of how it
+is measured rather than a property of the scene, and it is also the prettiest
+thing on the page, so it has a control of its own rather than a correction.
+**1.00 is the page exactly as it was**, to the byte; at **nothing** the veil is
+gone and the geometry is bare. It is also multiplied by the **Spike rate**,
+which is why impulses brighten it.
 
 **Noise** is film grain, laid on last, per pixel and per frame. It used to be on
 at a fixed strength and there was no way to turn it off; it is now off unless it
@@ -811,3 +824,38 @@ and so does switching the decal off.
 Where the card stands, which way it faces, how big it is and how far it reaches
 are all part of the settings: they are kept by **Save as default**, they travel
 in a template, and **Reset** puts them back.
+
+---
+
+## 26. What is in the shader
+
+A switch that is off is **not in the program**, rather than a branch the program
+never takes. The difference matters: code inside an untaken branch still
+reserves the registers it would need, for every pixel, and fewer registers to
+go round means fewer pixels in flight at once. That is why switching a feature
+off used to buy so little, and why the transparency **Depth** appeared to cost
+something with transparency itself switched off.
+
+So the fragment shader is assembled per draw from what is actually on:
+
+| Left out when | |
+| --- | --- |
+| **Shadows** off | the second march, the budget loop, the painted sphere, the shaping |
+| **MatCap** off | the sphere lookup |
+| **Normal map** off | the three projections and their blend |
+| **Transparency** off | the refraction loop, and the two marches it runs inside and outside the body |
+| **Depth map** off | the beam, its bounding box, and every hook it has in an object's field |
+| **Test cube** off | the cube, and the bound it widens |
+
+Objects were already separate this way — each program carries **one** object's
+field, so nothing about the brain is compiled while the neuron is on screen.
+
+Programs are built the first time a combination is asked for and kept for the
+session, so toggling back and forth costs one build each way and nothing after
+that. Switched off is exact: every "off is byte-identical to the baseline"
+claim in this document is now a claim about a **different, smaller program**
+producing the same frame to the byte.
+
+Two things stayed runtime checks because leaving them out would not pay for a
+variant of its own: **Noise** at zero skips its hash, and **Haze** and **Glow**
+are one multiply each.

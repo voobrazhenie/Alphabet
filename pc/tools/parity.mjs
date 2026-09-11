@@ -198,6 +198,7 @@ const renderPair = async ([webSrc, portSrc, u, W, H]) => {
       // always been". An unset uniform is zero, which would take the fog off
       // the page entirely and make every case differ.
       set("uHaze", "uniform1f", 1.0);
+      set("uGlow", "uniform1f", 1.0);
       set("uBoundPad", "uniform1f", u.boundPad);
       set("uWarpMode", "uniform1f", u.warpMode);
       const web = draw();

@@ -104,6 +104,19 @@ Two traps live in the shader rather than in the test:
   returned distance shortens the step too, but it also tells the glow the surface
   is near — which hangs a bright ghost of the clamping volume in empty air.
 
+## One more thing about the shader
+
+The page builds a **different program per object and per set of switched-on
+features** (`FEATS` / `featMask` in `neurons.html`, `#ifdef F_*` in the shader).
+Adding a feature means adding its define, gating its code, and adding it to
+`FEATS` — otherwise it is compiled into every variant and the whole point is
+lost. `window.__progs` reports how many variants have been built.
+
+A new uniform also has to be added to `pc/tools/parity.mjs` by hand: that tool
+sets every uniform itself, and one it does not know about stays at zero. A new
+uniform whose "do nothing" value is 1.0 — `uHaze`, `uGlow` — silently breaks
+every parity case until it is pinned there.
+
 ## The native build
 
 `pc/` is a separate program: the same effect as a Windows app (Rust + wgpu), with

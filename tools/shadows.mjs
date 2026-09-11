@@ -61,7 +61,7 @@ async function pose(page, over) {
     // baselines were taken before it existed, so the pose turns it back on:
     // that keeps "the sun switched off is the page as it was" a live claim
     // about the shading rather than a claim about the grain.
-    s.noise = 1.0; s.haze = 1.0; s.shadowOnly = 0; s.shadowSteps = 96;
+    s.noise = 1.0; s.haze = 1.0; s.glow = 1.0; s.shadowOnly = 0; s.shadowSteps = 96;
     s.normalOn = 0; s.normalMc = 0; s.normalAmt = 1.0; s.normalScale = 2.0;
     s.glassOn = 0; s.glassOpacity = 0.15; s.glassEdge = 0.60; s.glassIor = 1.45;
     s.glassTint = "#BFE9FF"; s.glassDensity = 0.90; s.glassDepth = 2;
@@ -374,6 +374,27 @@ const run = async () => {
     await pose(page, { ...flat, glassOn: 1, glassDepth: 2, glassDensity: 4.0 });
     const thick = await shot(page, "glass-dense");
     say(!thick.equals(two), "and Density deepens the tint with the crossing");
+
+    // The light gathered around the surfaces, which is the haze a decal's beam
+    // fills a room with. 1.00 is the page as it was.
+    await pose(page, { ...flat, glow: 1.0 });
+    if (off) say((await shot(page, "glow-one")).equals(off),
+                 "Glow at 1 is byte-identical to the baseline");
+    await pose(page, { ...flat, glow: 0.0 });
+    const dark = await shot(page, "glow-none");
+    if (off) {
+      const d = darkened(off, dark, 4);
+      say(d > 0.05, `and at nothing the gathered light goes (${(d * 100).toFixed(1)}% of the frame)`);
+    }
+
+    // Every feature switched off is a smaller program, not the same one taking
+    // a different branch — which is the whole point of the exercise. There are
+    // three objects, so anything past three is a feature set of its own; by
+    // this point the run has been through a good many of them.
+    await pose(page, { ...flat, shadowOn: 1 });
+    await shot(page, "feat-shadow");
+    const built = await page.evaluate(() => window.__progs);
+    say(built > 3, `a feature switched off is a shader of its own (${built} built so far)`);
 
     // The air the object stands in. The slider multiplies each object's own
     // thickness, so 1.00 has to be the page exactly as it was.
