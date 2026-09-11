@@ -65,6 +65,9 @@ async function pose(page, over) {
     s.normalOn = 0; s.normalMc = 0; s.normalAmt = 1.0; s.normalScale = 2.0;
     s.glassOn = 0; s.glassOpacity = 0.15; s.glassEdge = 0.60; s.glassIor = 1.45;
     s.glassTint = "#BFE9FF"; s.glassDensity = 0.90; s.glassDepth = 2;
+    s.depthOn = 0; s.depthMc = 0; s.depthAmt = 0.12; s.depthDist = 1.20;
+    s.depthPos = [0, 0, 1.80]; s.depthRot = [0, 0, 0, 1];
+    s.depthSize = [0.80, 0.80]; s.depthPart = [0, 0, 0];
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -371,6 +374,41 @@ const run = async () => {
     await pose(page, { ...flat, glassOn: 1, glassDepth: 2, glassDensity: 4.0 });
     const thick = await shot(page, "glass-dense");
     say(!thick.equals(two), "and Density deepens the tint with the crossing");
+
+    // The depth decal. A beam with no bite in it has to cost the march nothing
+    // whatsoever: its bounding box is evaluated per sample and a box that only
+    // ever shortens a step would still move where a ray lands.
+    await pose(page, { ...flat, depthOn: 1, depthMc: 1, depthAmt: 0.0 });
+    if (off) say((await shot(page, "decal-none")).equals(off),
+                 "a decal with no Intensity is byte-identical to the baseline");
+
+    await pose(page, { ...flat, depthOn: 1, depthMc: 1, depthAmt: 0.40 });
+    const dec = await shot(page, "decal-on");
+    if (off) say(!dec.equals(off), "and with some, the picture pushes the surface out");
+
+    await pose(page, { ...flat, depthOn: 1, depthMc: 1, depthAmt: -0.40 });
+    say(!(await shot(page, "decal-carve")).equals(dec), "Intensity below zero carves in instead");
+
+    await pose(page, { ...flat, depthOn: 1, depthMc: 1, depthAmt: 0.40, depthDist: 0.12 });
+    say(!(await shot(page, "decal-short")).equals(dec), "and Distance sets how far the beam reaches");
+
+    await pose(page, { ...flat, depthOn: 1, depthMc: 1, depthAmt: 0.40,
+                       depthPos: [0, 0, 3.40] });
+    if (off) say((await shot(page, "decal-away")).equals(off),
+                 "a card standing clear of the object touches nothing");
+
+    // Aiming it. The cube and the slab are separate parts of this one object,
+    // and a decal aimed at either has to leave the other exactly as it was.
+    const aim = { ...flat, depthOn: 1, depthMc: 1, depthAmt: 0.22, steps: 150,
+                  lcOn: [1, 1, 1, 1, 1, 1], depthPos: [0, 0.58, 1.20], depthDist: 1.60 };
+    await pose(page, { ...aim, depthPart: [0, 0, 0] });
+    const pAll = await shot(page, "decal-part-all");
+    await pose(page, { ...aim, depthPart: [0, 0, 1] });
+    const pSlab = await shot(page, "decal-part-slab");
+    await pose(page, { ...aim, depthPart: [0, 0, 2] });
+    const pCube = await shot(page, "decal-part-cube");
+    say(!pAll.equals(pSlab) && !pAll.equals(pCube) && !pSlab.equals(pCube),
+        "the slab, the cube and the two together each take the decal differently");
   }
 
   // The cube is the one shadow anybody can check by eye, and the only test here
@@ -490,7 +528,8 @@ const run = async () => {
     say(Math.abs(chip.back - 0.25) < 1e-9, `clicking it puts the default back (${chip.txt})`);
     say(Math.abs(chip.afterDouble - 0.25) < 1e-9, "and so does double-clicking the slider");
 
-    say(await ui.evaluate(() => document.querySelectorAll(".gico").length === 9),
+    say(await ui.evaluate(() => document.querySelectorAll(".gico").length ===
+                                document.querySelectorAll(".grpt").length),
         "every group header carries its own icon");
     const heights = await ui.evaluate(() => {
       const h = document.querySelector(".grph").getBoundingClientRect().height;
@@ -606,6 +645,106 @@ const run = async () => {
     });
     say(Math.abs(reset.now - reset.saved) < 1e-9, "Reset goes back to the last saved default");
     say(reset.tpls === 1, "and leaves the templates alone");
+
+    // ---- the decal group, and the gizmo that aims it -------------------
+    // The parts a decal can be aimed at belong to the object, so the list has
+    // to change when the object does.
+    await only([9]);
+    const parts = await ui.evaluate(() => {
+      const read = () => Array.prototype.map.call(
+        document.querySelectorAll("#dmTgt button"), (b) => b.textContent).join(" ");
+      document.querySelector("[data-scene='1']").click();
+      const neuron = read();
+      document.querySelector("[data-scene='2']").click();
+      const chrome = read();
+      document.querySelector("[data-scene='0']").click();
+      return { brain: read(), neuron, chrome };
+    });
+    say(parts.brain === "Everything Shell Cells", `the brain is a shell and cells (${parts.brain})`);
+    say(parts.neuron === "Everything Soma Dendrites Axon", `the neuron is three parts (${parts.neuron})`);
+    say(parts.chrome === "Everything Slab Cube", `and the chrome is two (${parts.chrome})`);
+
+    // Place stands the card in front of whatever is on screen, which is also
+    // the only way to be sure the gizmo is somewhere a pointer can reach it.
+    await ui.evaluate(() => {
+      const s = window.__state;
+      s.running = false; s.morph = false; s.mode = 0;
+      s.dragAz = 0.6; s.dragEl = 0.25; s.zoom = 1.0; s.clock = 12.0;
+      s.velAz = 0; s.velEl = 0;                 // a drag leaves inertia behind
+      s.resPin = 1; s.scaleQ = 0.30; s.stepsPin = true; s.steps = 48; s.aa = 0;
+      s.depthMc = 1;
+    });
+    const uiFrames = () => ui.evaluate(() => new Promise((done) => {
+      let n = 0;
+      const tick = () => (++n < 8 ? requestAnimationFrame(tick) : done());
+      requestAnimationFrame(tick);
+    }));
+    await uiFrames();
+    await ui.evaluate(() => document.getElementById("dmPlace").click());
+    await uiFrames();
+    const handles = await ui.evaluate(() => Array.prototype.map.call(
+      document.querySelectorAll("#giz [data-h]"), (e) => e.getAttribute("data-h")));
+    // three rings, and an arrow and a square for each axis that is not pointing
+    // straight at the eye — which the beam's is, square to the view
+    say(handles.length >= 7 && handles.indexOf("c") >= 0 &&
+        handles.indexOf("r0") >= 0 && handles.indexOf("m0") >= 0 && handles.indexOf("s0") >= 0,
+        `the gizmo puts up its handles (${handles.join(" ")})`);
+    say(await ui.evaluate(() => !!document.querySelector("#giz .card"),),
+        "and draws the card itself, semi-transparent");
+
+    const gizDrag = async (h, dx, dy) => {
+      const b = await ui.locator('#giz [data-h="' + h + '"]').boundingBox();
+      if (!b) return false;
+      const x = b.x + b.width / 2, y = b.y + b.height / 2;
+      await ui.mouse.move(x, y);
+      await ui.mouse.down();
+      await ui.mouse.move(x + dx * 0.4, y + dy * 0.4, { steps: 4 });
+      await ui.mouse.move(x + dx, y + dy, { steps: 6 });
+      await ui.mouse.up();
+      await ui.waitForTimeout(200);
+      return true;
+    };
+    const was = await ui.evaluate(() => ({
+      pos: window.__state.depthPos.slice(), dist: window.__state.depthDist }));
+    await gizDrag("c", 70, 0);
+    const now = await ui.evaluate(() => window.__state.depthPos.slice());
+    const slid = Math.hypot(now[0] - was.pos[0], now[1] - was.pos[1], now[2] - was.pos[2]);
+    say(slid > 0.05, `dragging the middle of it moves the card (${slid.toFixed(2)})`);
+
+    const wide = await ui.evaluate(() => window.__state.depthSize[0]);
+    await gizDrag("s0", 60, 0);
+    const wider = await ui.evaluate(() => window.__state.depthSize[0]);
+    say(Math.abs(wider - wide) > 0.05,
+        `the square on its edge makes the card wider (${wide.toFixed(2)} \u2192 ${wider.toFixed(2)})`);
+
+    // A ring is a stroke, and a bounding box is not on it: press a point the
+    // ring itself reports, which is the only one guaranteed to be under it.
+    const q0 = await ui.evaluate(() => window.__state.depthRot.slice());
+    const rp = await ui.evaluate(() => {
+      const el = document.querySelector('#giz [data-h="r2"]');
+      if (!el) return null;
+      const q = el.getAttribute("points").split(" ")[6].split(",");
+      return [+q[0], +q[1]];
+    });
+    if (rp) {
+      await ui.mouse.move(rp[0], rp[1]);
+      await ui.mouse.down();
+      await ui.mouse.move(rp[0] + 20, rp[1] - 40, { steps: 5 });
+      await ui.mouse.move(rp[0] + 45, rp[1] - 85, { steps: 5 });
+      await ui.mouse.up();
+      await ui.waitForTimeout(200);
+    }
+    const q1 = await ui.evaluate(() => window.__state.depthRot.slice());
+    const turned = Math.max(...q0.map((v, i) => Math.abs(v - q1[i])));
+    say(turned > 0.01, `and a ring turns it about that axis (${turned.toFixed(3)})`);
+
+    const shut = await ui.evaluate(() => {
+      const fake = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true });
+      window.dispatchEvent(fake);
+      document.dispatchEvent(fake);
+      return document.getElementById("dmEdit").getAttribute("aria-pressed");
+    });
+    say(shut === "false", "and Esc puts the gizmo away");
 
     await ui.close();
   }

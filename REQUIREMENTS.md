@@ -64,7 +64,7 @@ in. Slots are part of "Save as default".
 
 ## 5. Console
 
-**Nine folding groups, plus an ungrouped footer.** Every group is a filled
+**Ten folding groups, plus an ungrouped footer.** Every group is a filled
 header bar exactly one row high — icon, name, and the fold arrow — with a box of
 the same width hanging off it holding everything the group contains. A clear gap
 sits between the last thing in one group and the next group's header.
@@ -82,6 +82,7 @@ colour, which is what makes the left column scannable.
 | **Rendering** | Resolution, Antialias, Frame rate |
 | **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
 | **Material** | MatCap and its sphere, the normal map and its. See §16 and §20 |
+| **Depth map** | an image thrown at one part of the object, and the gizmo that aims it. See §24 |
 | **Transparency** | whether the eye goes through the surface, and what it finds. See §21 |
 | **Post** | what happens to the finished frame. See §17 |
 | **UI** | how the console itself looks, and Arrange. See §19 and §22 |
@@ -254,6 +255,7 @@ browser's, given the same object and settings.
 | --- | --- |
 | `space` | Flight and morph together |
 | `L` | Hand the left drag between the sun and the camera |
+| `G` | Show the depth decal's gizmo, or put it away |
 | `*` | Stand where the sun does, and come back |
 | `M` | Fold every group away, or open them all |
 | `shift+M` | Morph |
@@ -456,9 +458,9 @@ fetch and no lights at all.
 | **Keep** | Hold on to the chosen sphere — in this browser, and in the cloud so it follows the page to another computer. The two built-in ones are already there. |
 | **Delete** | Remove the chosen sphere from both. The built-in two stay. |
 
-The same list feeds the **Shadow sphere** picker in §15 and the **Map** picker
-in §20, so an image loaded once can be used as a material, as a shadow, as a
-normal map, or as all three. **Add** in §20 is the same loader; it differs only
+The same list feeds the **Shadow sphere** picker in §15, the **Map** picker in
+§20 and the depth decal's own in §24, so an image loaded once can be used as a
+material, as a shadow, as a normal map, as a decal, or as all of them. **Add** in §20 is the same loader; it differs only
 in which of the three the new image lands in, and each of the two groups keeps
 and deletes what its own chooser is pointing at.
 
@@ -710,3 +712,90 @@ survive a reload with no network at all, and one small cloud document each so
 they follow the page to another computer. Ten copies of the settings will not
 fit inside the settings, which is why they are not a field in it. **Reset never
 touches them.**
+
+---
+
+## 24. Depth map
+
+An image thrown at the object from a card standing in the world, the way a decal
+projector throws one. Where the picture is bright the surface is pushed out
+along its own normal; where it is dark the surface is left where it was. It is
+real geometry and not a shading trick — the silhouette moves, and the sun, the
+shadows, the matcap and the glass all see the relief and agree about it.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Depth map** | off / on | off |
+| **Map** | which image, from the one shared list of §16 | Chrome |
+| **Add / Keep / Delete** | as §16, but on the chosen decal | |
+| **Target** | which part of this object the beam may touch | Everything |
+| **Intensity** | -1.00 – 1.00 | 0.12 |
+| **Distance** | 0.05 – 4.00 | 1.20 |
+| **Edit** | show the gizmo, or put it away | off |
+| **Place** | stand the card in front of the view | |
+
+Off is exact: not a texel is read and the frame is the one it always was. So is
+**Intensity at nothing** — the beam's own bounding box is skipped with it, and a
+box that only ever shortened a step would still move where a ray landed. A card
+standing clear of the object is exact too: the shape it beams at is the shape it
+would have had.
+
+**Target.** One decal, aimed at one part, and every object is made of different
+parts:
+
+| Object | Parts |
+| --- | --- |
+| **Brain** | Shell, Cells |
+| **Neuron** | Soma, Dendrites, Axon |
+| **Chrome** | Slab, Cube |
+
+The chosen part takes the picture **before** it is combined with the rest, so a
+soma that has been pushed out still blends into its dendrites the way it always
+did, rather than being displaced after the fact and cutting across them. Aimed
+at *Everything* the whole field takes it at once. The choice is remembered per
+object, because a part of the brain means nothing while the neuron is on screen.
+
+**Reach.** The beam is the card's rectangle swept along its own back axis for
+**Distance**. The picture is at full strength for the first part of that and
+fades out over the rest, and it fades at the rim of the card as well. Both fades
+are what keeps the field continuous: relief that switched on at an edge would be
+a wall with no distance to it, and the march would step through the side of its
+own decal. The far fade is also what stops a beam longer than the body embossing
+the **back** of it, which a distance field cannot tell from the front.
+
+**Intensity below zero carves in** instead of pushing out, and is otherwise the
+same thing.
+
+**Cost.** Inside the beam the march is divided down by how steeply the picture
+can tilt the field — a deeper bite over a smaller card is a steeper slope — and
+outside it nothing is paid. The step budget on Auto grows to cover part of it,
+the way it does for a warp, and a benchmark run says which map was used, what it
+was aimed at, and what the beam cost the step.
+
+## 25. The gizmo
+
+`G`, the **Edit** button, or **Place** puts a gizmo on the card, drawn over the
+picture rather than in it: there are no polygons in this scene to pick against,
+so a handle is a shape at a projected point and a drag on it is arithmetic in
+the camera's own basis. It is Blender's gizmo, and it works like Blender's.
+
+| Handle | |
+| --- | --- |
+| **Arrow**, one per axis | move the card along that axis |
+| **Ring**, one per axis | turn it about that axis |
+| **Square** on the right and top edges | make the card wider or taller |
+| **Square** at the end of the beam | set how far the beam reaches |
+| **Circle** in the middle | move the card across the view |
+
+The pivot is the centre of the picture, and everything turns and scales about
+it. While the gizmo is up the card itself is drawn as a semi-transparent
+rectangle with its beam sketched out in front of it, so what is about to be hit
+is visible before it is hit. The gizmo is screen-sized rather than world-sized,
+so it stays the same size to the hand whether the card is across the room or in
+your face; a drag is worked out from where it started rather than frame by
+frame, so a slow hand and a fast one land in the same place. `Esc` puts it away,
+and so does switching the decal off.
+
+Where the card stands, which way it faces, how big it is and how far it reaches
+are all part of the settings: they are kept by **Save as default**, they travel
+in a template, and **Reset** puts them back.

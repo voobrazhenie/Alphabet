@@ -91,6 +91,19 @@ menu would fit in.
 
 Always check: all three objects still compile and render, and no page errors.
 
+Two traps live in the shader rather than in the test:
+
+- **Where a global goes.** The fragment shader is one file with each object's SDF
+  inside its own `#ifdef`, and the neuron's sits high up — above `sceneLip`. A
+  global or helper that every object needs has to be declared above *all three*
+  `#ifdef` blocks, or two objects compile, the third says `undeclared identifier`,
+  and the page shows a blank canvas for that one object only.
+- **What `map` returns is read twice.** The march steps by it, and the volumetric
+  glow multiplies it back up to recover the true distance. So a local feature that
+  needs shorter steps must raise `lip` and leave the distance alone. Clamping the
+  returned distance shortens the step too, but it also tells the glow the surface
+  is near — which hangs a bright ghost of the clamping volume in empty air.
+
 ## The native build
 
 `pc/` is a separate program: the same effect as a Windows app (Rust + wgpu), with
