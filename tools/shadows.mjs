@@ -437,6 +437,179 @@ const run = async () => {
     say(await inMode(), "L takes it back again");
   }
 
+  // ---- the console itself ----------------------------------------------
+  // Its own page, because the checks above hide the interface and work at a
+  // size no menu would fit in. Nothing here touches the shader: it is about
+  // whether the thing can be taken apart and put back together.
+  if (mode === "check") {
+    const ui = await browser.newPage({ viewport: { width: 1000, height: 1300 } });
+    ui.on("pageerror", (e) => { if (ours(String(e))) errors.push("console: " + e); });
+    ui.on("dialog", (d) => d.accept("Night"));
+    await ui.goto(page_url);
+    await ui.waitForTimeout(1400);
+
+    const only = async (list) => {
+      await ui.evaluate((l) => {
+        document.querySelectorAll(".grpt").forEach((h) => {
+          const want = l.indexOf(+h.dataset.grp) >= 0;
+          if ((h.getAttribute("aria-expanded") === "true") !== want) h.click();
+        });
+        document.querySelector(".console").scrollTop = 0;
+      }, list);
+      await ui.waitForTimeout(220);
+    };
+    // by the grip, or by the header — a real pointer, because that is the only
+    // gesture there is: the browser's own drag and drop leaves touch out
+    const drag = async (from, to, atBottom) => {
+      const a = await ui.locator(from).boundingBox();
+      const b = await ui.locator(to).boundingBox();
+      await ui.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+      await ui.mouse.down();
+      await ui.mouse.move(a.x + a.width / 2, a.y + a.height / 2 + 12, { steps: 3 });
+      const y = atBottom ? b.y + b.height - 4 : b.y + 4;
+      await ui.mouse.move(b.x + b.width / 2, y, { steps: 10 });
+      await ui.mouse.move(b.x + b.width / 2, y, { steps: 2 });
+      await ui.mouse.up();
+      await ui.waitForTimeout(180);
+    };
+
+    // a slider offers its way back, and only while there is one to offer
+    const chip = await ui.evaluate(() => {
+      const c = document.querySelector('.dflt[data-dflt="shSoft"]');
+      const before = c.hidden;
+      const i = document.getElementById("shSoft");
+      i.value = 70; i.dispatchEvent(new Event("input"));
+      const shown = !c.hidden, txt = c.textContent;
+      c.click();
+      const back = window.__state.shadowSoft;
+      i.value = 70; i.dispatchEvent(new Event("input"));
+      i.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      return { before, shown, txt, back, afterDouble: window.__state.shadowSoft };
+    });
+    say(chip.before && chip.shown, "the default only shows once a slider has been moved");
+    say(Math.abs(chip.back - 0.25) < 1e-9, `clicking it puts the default back (${chip.txt})`);
+    say(Math.abs(chip.afterDouble - 0.25) < 1e-9, "and so does double-clicking the slider");
+
+    say(await ui.evaluate(() => document.querySelectorAll(".gico").length === 9),
+        "every group header carries its own icon");
+    const heights = await ui.evaluate(() => {
+      const h = document.querySelector(".grph").getBoundingClientRect().height;
+      // a button that is definitely on screen: the first one is inside a module
+      // this object does not show, and a hidden element measures zero
+      const b = document.getElementById("benchBtn").getBoundingClientRect().height;
+      return [Math.round(h), Math.round(b)];
+    });
+    say(heights[0] === heights[1], `a header is exactly as tall as a button (${heights.join(" / ")})`);
+
+    const m = await ui.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "m", code: "KeyM", bubbles: true }));
+      const shut = window.__state.groups.every((g) => !g);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "m", code: "KeyM", bubbles: true }));
+      const open = window.__state.groups.every((g) => !!g);
+      const was = window.__state.morph;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "M", code: "KeyM", shiftKey: true, bubbles: true }));
+      return { shut, open, morph: window.__state.morph !== was };
+    });
+    say(m.shut && m.open, "M folds every group away, and brings them all back");
+    say(m.morph, "and the field's own animation is on shift+M");
+
+    await ui.evaluate(() => document.getElementById("rgOn").click());
+    say(await ui.evaluate(() => getComputedStyle(
+          document.querySelector('.mod[data-mod="sphere"] .mgrip')).display !== "none"),
+        "arranging shows a grip on every module");
+
+    await only([4, 5]);
+    await drag('.mod[data-mod="sphere"] .mgrip', '.mod[data-mod="gopacity"]', true);
+    const moved = await ui.evaluate(() => ({
+      gid: document.querySelector('.mod[data-mod="sphere"]').closest(".grp").dataset.gid,
+      dirty: !document.getElementById("dirty").hidden,
+      inState: ((window.__state.uiMods || {})["5"] || []).indexOf("sphere") >= 0,
+    }));
+    say(moved.gid === "5", "a module can be dragged into another group");
+    say(moved.inState, "and the move is in the state, not only on screen");
+    say(moved.dirty, "and the console says so until it is saved");
+
+    await drag('.mod[data-mod="gdepth"] .mgrip', '.mod[data-mod="gopacity"]', false);
+    const inside = await ui.evaluate(() => (window.__state.uiMods["5"] || []).join(","));
+    say(inside.indexOf("gdepth") < inside.indexOf("gopacity"), "and reordered inside one group");
+
+    await only([]);
+    await drag('.grp[data-gid="6"] .grph', '.grp[data-gid="0"]', false);
+    const order = await ui.evaluate(() => window.__state.uiOrder.join(","));
+    say(order.indexOf("6") < order.indexOf("0"), `a group can be dragged above another (${order})`);
+    say(await ui.evaluate(() => document.querySelectorAll(".grp .grp").length === 0),
+        "and no group ever ends up inside another");
+
+    await only([5]);
+    await ui.evaluate(() => {
+      const go = (pen, name, text) => {
+        pen.click();
+        name.textContent = text;
+        name.dispatchEvent(new FocusEvent("blur"));
+      };
+      go(document.querySelector('.grp[data-gid="5"] .grph .pen'),
+         document.querySelector('.grp[data-gid="5"] .grpn'), "Glassy");
+      go(document.querySelector('.mod[data-mod="gedge"] .pen'),
+         document.querySelector('.mod[data-mod="gedge"] .modt'), "Rim");
+    });
+    const named = await ui.evaluate(() => [window.__state.uiNames["g:5"], window.__state.uiNames["m:gedge"]]);
+    say(named[0] === "Glassy" && named[1] === "Rim", `a group and a module can be renamed (${named.join(", ")})`);
+
+    const trip = await ui.evaluate(() => {
+      const keep = JSON.stringify({ o: window.__state.uiOrder, m: window.__state.uiMods, n: window.__state.uiNames });
+      document.getElementById("rgOn").click();
+      document.getElementById("saveBtn").click();
+      const clean = document.getElementById("dirty").hidden;
+      const k = JSON.parse(keep);
+      window.__state.uiOrder = k.o; window.__state.uiMods = k.m; window.__state.uiNames = k.n;
+      document.getElementById("resetBtn").click();
+      return { clean,
+               gid: document.querySelector('.mod[data-mod="sphere"]').closest(".grp").dataset.gid,
+               name: document.querySelector('.grp[data-gid="5"] .grpn').textContent };
+    });
+    say(trip.clean, "saving as the default takes that notice away");
+    say(trip.gid === "5" && trip.name === "Glassy", "and the arrangement comes back out of the saved settings");
+
+    await only([3, 8]);
+    await ui.evaluate(() => { window.__state.shadowDark = 0.11; });
+    await ui.click("#tplAdd");
+    await ui.waitForTimeout(350);
+    const tpl = await ui.evaluate(() => ({
+      n: document.querySelectorAll("#tplSeg button").length,
+      label: (document.querySelector("#tplSeg button") || {}).textContent }));
+    say(tpl.n === 1 && /Night/.test(tpl.label || ""), `a template is kept under its name (${tpl.label})`);
+    const recall = await ui.evaluate(() => {
+      window.__state.shadowDark = 0.99;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "1", code: "Digit1", altKey: true, bubbles: true }));
+      return window.__state.shadowDark;
+    });
+    say(Math.abs(recall - 0.11) < 1e-9, "alt+1 recalls it");
+    const digits = await ui.evaluate(() => {
+      const was = window.__state.resPin;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "3", code: "Digit3", altKey: true, bubbles: true }));
+      const held = window.__state.resPin === was;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "3", code: "Digit3", bubbles: true }));
+      return { held, plain: window.__state.resPin === 2 };
+    });
+    say(digits.held, "and alt+3 does not also do what 3 does");
+    say(digits.plain, "while 3 on its own still does");
+
+    const reset = await ui.evaluate(() => {
+      const i = document.getElementById("shLevel");
+      i.value = 20; i.dispatchEvent(new Event("input"));
+      document.getElementById("saveBtn").click();
+      const saved = window.__state.shadowLevel;
+      i.value = 80; i.dispatchEvent(new Event("input"));
+      document.getElementById("resetBtn").click();
+      return { saved, now: window.__state.shadowLevel,
+               tpls: document.querySelectorAll("#tplSeg button").length };
+    });
+    say(Math.abs(reset.now - reset.saved) < 1e-9, "Reset goes back to the last saved default");
+    say(reset.tpls === 1, "and leaves the templates alone");
+
+    await ui.close();
+  }
+
   if (errors.length) {
     console.log("\npage errors:");
     for (const e of errors.slice(0, 6)) console.log("  " + e);

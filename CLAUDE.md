@@ -79,6 +79,16 @@ A screenshot is also of the canvas at its CSS size, not its backing store, so
 counting individual pixels means making the two match first — otherwise the
 browser's resampling is what gets counted.
 
+A fourth, for anything that has to be **dragged**: Playwright's `dragAndDrop`
+does not synthesize HTML5 drag and drop in this headless build — not one
+`dragstart` fires — so the console reorders from pointer events instead, which
+`mouse.down/move/up` does drive (and which a touch screen has, and HTML5 drag
+does not). `elementFromPoint` returns nothing outside the viewport, so a drag
+only lands if both ends are actually on screen: fold the groups first, or give
+that page a tall viewport. The console checks open a page of their own for
+exactly that reason — the shader checks hide the interface and run at a size no
+menu would fit in.
+
 Always check: all three objects still compile and render, and no page errors.
 
 ## The native build

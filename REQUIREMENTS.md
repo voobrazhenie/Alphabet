@@ -64,27 +64,37 @@ in. Slots are part of "Save as default".
 
 ## 5. Console
 
-Four folding groups, plus an ungrouped footer.
+**Nine folding groups, plus an ungrouped footer.** Every group is a filled
+header bar exactly one row high — icon, name, and the fold arrow — with a box of
+the same width hanging off it holding everything the group contains. A clear gap
+sits between the last thing in one group and the next group's header.
 
-- **Construction** — Object, Navigation, Flight path.
-- **Object modifications** — the chrome build steps and their sliders, ray
-  steps, surface precision, step relaxation, bounds and padding, cell density,
-  domain warp, noise warp mode, warp strength and scale, line width, spike rate,
-  colours, and the Flight / Morph / Impulses toggles.
-- **Rendering** — Resolution, Antialiasing, Uncapped.
-- **Shadows** — the Shadows switch, where the sun stands, and how its shadows
-  fall. See §15.
-- **Material** — the MatCap switch, which sphere it uses, loading more of them,
-  and the normal map. See §16 and §20.
-- **Transparency** — whether the eye goes through the surface, and what it
-  finds on the way. See §21.
-- **Post** — what happens to the finished frame. See §17.
-- **UI** — how the console itself looks. See §19.
-- Footer — Benchmark, Save as default / Reset, and two status lines.
+**Inside a group the layout is two columns**, the way a property sheet is: a
+narrow left column with the module's name, and everything that module controls
+on the right. A **module** is one named thing — *Sphere*, *Softness*, *Bounds* —
+and it is the unit the console is built out of. Module names are in the accent
+colour, which is what makes the left column scannable.
+
+| Group | What it holds |
+| --- | --- |
+| **Construction** | Object, Navigation, Flight path |
+| **Object modifications** | the chrome build steps and their sliders, ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
+| **Rendering** | Resolution, Antialias, Frame rate |
+| **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
+| **Material** | MatCap and its sphere, the normal map and its. See §16 and §20 |
+| **Transparency** | whether the eye goes through the surface, and what it finds. See §21 |
+| **Post** | what happens to the finished frame. See §17 |
+| **UI** | how the console itself looks, and Arrange. See §19 and §22 |
+| **Templates** | whole settings under a name. See §23 |
+| Footer | Benchmark, Save as default / Reset, and two status lines |
 
 Controls that belong to one object only are shown only for that object. Which
-groups are open is remembered. The console is the one panel that scrolls, with
-a styled vertical scrollbar and no horizontal one.
+groups are open is remembered, and **`M` folds them all away** — or brings them
+all back if they are already away. The console is the one panel that scrolls,
+with a styled vertical scrollbar and no horizontal one.
+
+**None of that arrangement is fixed.** Groups and modules can be reordered,
+moved between groups and renamed; see §22.
 
 ## 6. Rendering controls
 
@@ -141,8 +151,13 @@ Twist and bend are space warps in both modes.
 ## 9. Saved settings
 
 **Save as default** stores everything the console can set, the fly camera's
-position and heading, the six viewpoint slots, and which groups are open.
-**Reset** returns to the built-in settings.
+position and heading, the six viewpoint slots, which groups are open, and how
+the console is arranged (§22).
+
+**Reset** goes back to whatever was last saved as the default — not to the
+built-in settings — and it deletes nothing: the saved default stays saved and
+every template (§23) is left exactly where it was. With nothing ever saved, the
+built-in settings are what it goes back to, which is the same thing.
 
 Two stores behind one seam. The browser's own copy lands first so there is no
 flash of the wrong settings; a Firestore document
@@ -240,7 +255,8 @@ browser's, given the same object and settings.
 | `space` | Flight and morph together |
 | `L` | Hand the left drag between the sun and the camera |
 | `*` | Stand where the sun does, and come back |
-| `M` | Morph |
+| `M` | Fold every group away, or open them all |
+| `shift+M` | Morph |
 | `I` | Impulses |
 | `R` | New viewpoint |
 | `1` `2` `3` `4` | Auto / Half / Native / FHD resolution |
@@ -250,11 +266,17 @@ browser's, given the same object and settings.
 | `` shift+` `` | Fly mode |
 | `5`–`0` | Recall a viewpoint |
 | `shift`+`5`–`0` | Store a viewpoint |
+| `alt`+`1`–`0` | Recall a template |
 | `W A S D Q E`, `shift` | Fly (only while flying) |
 | `Esc` | Close or stop the benchmark |
 
-Keys are ignored while a text input has focus. `W A S D Q E` belong to fly mode
-while it is on, so `A` does not also cycle antialiasing there.
+Keys are ignored while a text input has focus, and while a name is being typed
+into. `W A S D Q E` belong to fly mode while it is on, so `A` does not also cycle
+antialiasing there.
+
+**`alt` is its own alphabet.** A key with `alt` held reaches only the template
+list, and nothing else on the page reads a key while `alt` is down — so `alt+1`
+does one thing and `1` does another.
 
 ## 13. Constraints and behaviour under stress
 
@@ -483,6 +505,12 @@ convenience and not the range: what is typed is taken as it is, even when the
 thumb has to sit at one end to show it, so a value past either end of a slider
 is reached by typing it. `Enter` commits, `Esc` puts the old reading back.
 
+**And a way back to the default.** Beside the reading, while the two differ,
+sits what the value would be in the saved default (§9), written the same way —
+so the same small number is both the way back and the mark that says this one
+has been touched. Clicking it restores that value, and so does double-clicking
+the slider.
+
 ## 19. The console itself
 
 It is fixed to the top right and flush with three edges of the window — no
@@ -491,10 +519,27 @@ it used to be. **Its left edge is a handle**: drag it to set the width, between
 120 and 680 pixels. The rest of the interface keeps clear of whatever that
 width is.
 
-A group's header is a filled bar in the accent colour with dark text on it, and
-what the group holds sits in from that bar, so the shape of the thing is legible
-without reading a word of it. There is more air on the right, between the content
-and the scroll bar, than on the left.
+A group's header is a filled bar with an icon and dark text on it, exactly one
+row high, and what it holds is a box of the same width hanging off it — so a
+group is one object on the page rather than a heading with loose rows under it.
+There is a gap before the next header, more air on the right than on the left,
+and button borders are brighter than panel borders because a button is the thing
+being pointed at.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Font size** | 8-26 px | 12 |
+| **Name column** | 18-62 % | 36 |
+| **Opacity** | 0-1 | 0.94 |
+| **Back** / **Accent** | any colour | #04070c / #2fd9c0 |
+| **Headers** | any colour | #2fd9c0 |
+| **Arrange** | off / on | off |
+
+**Headers** is its own colour, separate from the accent: it fills every group
+header and tints the box each group is drawn in. Its text flips between dark and
+light by the colour's own brightness, so a header is legible whatever it is set
+to. **Name column** is how much of the width the left column of names takes; the
+controls get the rest.
 
 **There are no hints.** The line at the foot appears only to say that something
 happened — a view stored, a sphere kept — and goes away again.
@@ -614,3 +659,54 @@ Shadows are unaffected: a shadow ray still treats everything as solid, so a
 see-through object throws the shadow of a solid one. The lit-versus-unlit view
 (§15) ignores transparency too, because what it is drawing is the shadow term
 and not the object.
+
+## 22. Arranging the console
+
+**Arrange** (in the UI group) takes hold of the console. While it is on, every
+module shows a grip and every group header and module name grows a pencil.
+
+- **A grip carries its module.** Drop it anywhere in any group — including onto
+  a folded group's header, which puts it at the end of that group.
+- **A header carries the whole group.** Groups reorder among themselves and
+  nothing else: a group is always beside another group, never inside one. There
+  are no sub-levels and none can be made.
+- **The pencil renames** the group or the module it sits on. `Enter` or `Esc`
+  finishes; the page's own keys stand down while a name is being typed.
+
+Moving is done with the pointer rather than with the browser's drag and drop: a
+grip is a small target, the console scrolls (and scrolls itself when a drag
+reaches either end of it), and a touch screen has no drag gesture at all. A
+header that has just been dragged does not also fold.
+
+**Nothing is saved by rearranging.** The moment anything moves or is renamed, an
+amber strip appears at the top of the console — stuck there, so it cannot be
+scrolled away from — saying the layout has changed and naming the two things
+that would keep it: **Save as default**, or **Save as** a template. It goes away
+the moment either happens.
+
+The arrangement is three small things — the order of the groups, which modules
+each one holds, and anything renamed — and none of it is about what the page
+draws, so it rides in the saved settings like any other preference and travels
+inside a template like one too. A module that a saved layout has never heard of,
+because it was added afterwards, goes back to the group it was built in rather
+than disappearing.
+
+## 23. Templates
+
+A template is one whole snapshot of the settings under a name of your choosing.
+Ten of them.
+
+| Control | |
+| --- | --- |
+| **Stored** | the templates there are. Clicking one applies it |
+| **Save as** | name this moment and keep it |
+| **Delete** | remove the one showing as chosen |
+
+`alt`+`1`–`0` recalls the template in that slot, counting the list from the top;
+`alt+0` is the tenth. Applying one brings its arrangement (§22) with it.
+
+They are held twice, exactly as the spheres in §16 are: in this browser so they
+survive a reload with no network at all, and one small cloud document each so
+they follow the page to another computer. Ten copies of the settings will not
+fit inside the settings, which is why they are not a field in it. **Reset never
+touches them.**
