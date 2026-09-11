@@ -48,11 +48,35 @@ steers relative to the path; the wheel or a pinch changes range.
 
 - `W A S D` move, `Q` `E` down and up in world coordinates, `shift` sprints.
 - Right-drag looks; pitch stops just short of the poles.
-- The wheel (or a pinch) sets speed, 0.03 to 12 units per second.
+- The wheel (or a pinch) sets speed, between the two limits in the **Camera**
+  group. The floor reaches down to a thousandth of a unit a second on the
+  slider, and lower still if a number is typed into the reading — a crawl is a
+  legal speed.
 - Taking over from auto cam starts exactly where the auto path left the camera.
 
 `R` jumps to a new viewpoint. It always frames the object rather than empty
 space, and stays close enough that the object overruns the frame.
+
+**The Camera group.**
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Slowest** | 0.001-1.000, or typed down to 0.0001 | 0.030 |
+| **Fastest** | 0.5-60, or typed up to 400 | 12.0 |
+| **Look smoothing** | 0-1 | 0.00 |
+| **Move smoothing** | 0-1 | 0.00 |
+
+The two limits are what the wheel may wind the speed down and up to; `shift`
+still sprints past the ceiling. Moving a limit past where the speed currently
+sits carries the speed with it.
+
+**Smoothing** makes the hand set a target the camera then walks toward, by the
+same fraction of what is left every second however long a frame happens to be —
+20 ms of lag at the bottom of the slider, 0.9 s at the top. Look and movement
+have one each. **At nothing the target is the camera**: there is no easing step
+at all, and flight is exactly what it always was. Being put somewhere — `R`, a
+saved viewpoint, a template, taking over from auto cam — is a jump, never an
+ease.
 
 **The framing never moves because of the interface.** Folding a console group,
 hiding the panels or resizing the console must not shift the view by a pixel.
@@ -66,7 +90,7 @@ in. Slots are part of "Save as default".
 
 ## 5. Console
 
-**Ten folding groups, plus an ungrouped footer.** Every group is a filled
+**Eleven folding groups, plus an ungrouped footer.** Every group is a filled
 header bar exactly one row high — icon, name, and the fold arrow — with a box of
 the same width hanging off it holding everything the group contains. A clear gap
 sits between the last thing in one group and the next group's header.
@@ -80,6 +104,7 @@ colour, which is what makes the left column scannable.
 | Group | What it holds |
 | --- | --- |
 | **Construction** | Object, Navigation, Flight path |
+| **Camera** | how slow and how fast flight goes, and how much it lags the hand. See §3 |
 | **Object modifications** | the chrome build steps and their sliders, ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
 | **Rendering** | Resolution, Antialias, Frame rate |
 | **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
@@ -726,11 +751,34 @@ Ten of them.
 | Control | |
 | --- | --- |
 | **Stored** | the templates there are. Clicking one applies it |
+| **Fade to next** | 0-1, cross-fade from here to the next one along |
 | **Save as** | name this moment and keep it |
+| **Update** | write over the one showing as chosen, keeping its name and number |
 | **Delete** | remove the one showing as chosen |
 
 `alt`+`1`–`0` recalls the template in that slot, counting the list from the top;
 `alt+0` is the tenth. Applying one brings its arrangement (§22) with it.
+
+A template holds **when** as well as **what**. The three clocks — the flight
+path's, the field's and the impulses' — are saved with everything else, and this
+field has no random number in it that is not a hash of a position, so where the
+clocks stand *is* the state of the animation. Recalling a template therefore
+lands on the same frame, not merely on the same settings. The auto cam's
+steering goes with them for the same reason. **Save as default** keeps them too,
+so **Reset** rewinds to the moment the default was saved.
+
+**Fade to next** crosses from wherever you are now to the next template in the
+list, wrapping round at the end. Numbers and colours cross over; anything that
+is a choice rather than an amount — which bound, which build steps, whether a
+thing is on — flips at the half-way mark, because there is no half of a choice.
+Let go anywhere in between and you stay there; take it back to nothing and you
+are exactly where you started. Take it all the way and that template becomes the
+one you are on, the fader returns to nothing, and the next one along is the one
+after it — so a chain of templates can be walked through one fade at a time.
+**Which object is on screen never changes**, at any point of the fade or at the
+end of it: a fader is for crossing between looks, and a cut to another object is
+not one. The clocks do not cross either — the animation keeps running through
+the fade and lands on the template's own moment at the end.
 
 They are held twice, exactly as the spheres in §16 are: in this browser so they
 survive a reload with no network at all, and one small cloud document each so

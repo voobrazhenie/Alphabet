@@ -682,6 +682,71 @@ const run = async () => {
     say(Math.abs(reset.now - reset.saved) < 1e-9, "Reset goes back to the last saved default");
     say(reset.tpls === 1, "and leaves the templates alone");
 
+    // ---- the camera group ----------------------------------------------
+    await only([10]);
+    const cam = await ui.evaluate(() => {
+      const s = window.__state;
+      s.flyMin = 0.030; s.flyMax = 12.0; s.flySpeed = 0.20;
+      // wind the floor up past where the speed is and the speed comes with it
+      const i = document.getElementById("camMin");
+      i.value = 1000; i.dispatchEvent(new Event("input"));
+      const dragged = s.flySpeed;
+      // and a number typed into the reading goes below what the slider reaches
+      const out = document.getElementById("camMinOut");
+      out.textContent = "0.0004";
+      out.dispatchEvent(new FocusEvent("blur"));
+      return { dragged, floor: s.flyMin, min: s.flyMin };
+    });
+    say(Math.abs(cam.dragged - 1.0) < 1e-6,
+        `raising the floor past the speed carries the speed with it (${cam.dragged})`);
+    say(cam.floor < 0.001, `and a typed number goes below the slider (${cam.floor})`);
+
+    // ---- a template remembers when, not just what -----------------------
+    await only([8]);
+    const when = await ui.evaluate(() => {
+      const s = window.__state;
+      // stop the clocks, or the frame between the recall and the reading
+      // moves them on and there is nothing exact left to compare
+      s.running = false; s.morph = false;
+      s.clock = 77.5; s.mClock = 21.25; s.pClock = 3.5; s.shadowDark = 0.42;
+      return 1;
+    });
+    await ui.click("#tplUpd");
+    await ui.waitForTimeout(350);
+    const back = await ui.evaluate(() => {
+      const s = window.__state;
+      s.clock = 5; s.mClock = 5; s.pClock = 5; s.shadowDark = 0.9;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "1", code: "Digit1", altKey: true, bubbles: true }));
+      return { clock: s.clock, m: s.mClock, p: s.pClock, dark: s.shadowDark,
+               n: document.querySelectorAll("#tplSeg button").length };
+    });
+    say(when === 1 && back.n === 1, "Update writes over the template you are on rather than adding one");
+    say(Math.abs(back.dark - 0.42) < 1e-9, "and what it writes is what comes back");
+    say(Math.abs(back.clock - 77.5) < 1e-9 && Math.abs(back.m - 21.25) < 1e-9 &&
+        Math.abs(back.p - 3.5) < 1e-9,
+        `a template lands on the same frame of the animation (${back.clock} / ${back.m} / ${back.p})`);
+
+    // ---- and the fader across to the next one ---------------------------
+    await ui.evaluate(() => { window.__state.shadowDark = 0.90; window.__state.scene = 0; });
+    await ui.click("#tplAdd");
+    await ui.waitForTimeout(400);
+    const fade = await ui.evaluate(() => {
+      const s = window.__state;
+      const mix = document.getElementById("tplMix");
+      // sitting on the second, so the next one round is the first: 0.42
+      const from = s.shadowDark;
+      mix.value = 50; mix.dispatchEvent(new Event("input"));
+      const half = s.shadowDark;
+      const scene = s.scene;
+      mix.value = 100; mix.dispatchEvent(new Event("input"));
+      return { from, half, scene, end: s.shadowDark, back: +mix.value, land: s.scene };
+    });
+    say(Math.abs(fade.half - 0.66) < 0.02,
+        `the fader crosses from here to the next (${fade.from} -> ${fade.half.toFixed(2)} -> ${fade.end})`);
+    say(fade.scene === 0 && fade.land === 0, "and leaves the object where it is, the whole way across");
+    say(Math.abs(fade.end - 0.42) < 1e-9 && fade.back === 0,
+        "all the way across lands on it and the fader goes back to nothing");
+
     // ---- the decal group, and the gizmo that aims it -------------------
     // The parts a decal can be aimed at belong to the object, so the list has
     // to change when the object does.
