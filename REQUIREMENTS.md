@@ -483,7 +483,7 @@ fetch and no lights at all.
 | --- | --- |
 | **MatCap** | off / on. Off by default, and off is exact: not a texel is read and the frame is the lit one, to the byte. |
 | **Sphere** | Which one. Two are built in — **Chrome**, a polished ball on a dark stand, and **Normals**, which is not a photograph but the surface direction written straight into the colour. |
-| **Add…** | Load an image from this computer. It is brought down to 512 across, joins the list and is used at once. |
+| **Add…** | Load an image from this computer. It joins the list and is used at once, brought down to 512 across — or 1600 for a sprite sheet, which needs the room. An image that is **see-through** keeps its transparency: it is made smaller until it fits rather than re-encoded as a JPEG, which has no alpha channel and would put a black box around a cut-out. |
 | **Keep** | Hold on to the chosen sphere — in this browser, and in the cloud so it follows the page to another computer. The two built-in ones are already there. |
 | **Delete** | Remove the chosen sphere from both. The built-in two stay. |
 
@@ -972,9 +972,10 @@ It is a plain element laid over the canvas, not anything in the shader: it costs
 the render nothing and cannot disturb a pixel of it. Hiding the panels leaves
 him standing there — he is part of the shot, not part of the console.
 
-**Add** takes a sprite sheet: every frame side by side in one strip, any size.
-It goes into the same list §16 keeps, at a larger size than a sphere is kept at
-because a strip of frames needs the room, and **Keep** holds on to it in this
-browser and in the cloud like any other image. A template remembers the sheet,
+**Add** takes a sprite sheet: every frame side by side in one strip, any size,
+**transparency and all** — a cut-out stays a cut-out however big the sheet is
+(see §16). It goes into the same list §16 keeps, at a larger size than a sphere
+is kept at because a strip of frames needs the room, and **Keep** holds on to it
+in this browser and in the cloud like any other image. A template remembers the sheet,
 the size, the frame count and the speed — but not which frame he is on, which
 follows the clock on the wall rather than the field's.

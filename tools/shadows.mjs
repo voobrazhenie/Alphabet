@@ -796,6 +796,56 @@ const run = async () => {
       return parseFloat(document.getElementById("sprite").style.height) || 0;
     });
     say(grew > ov.h * 1.8, `and Size makes him bigger (${ov.h.toFixed(0)} -> ${grew.toFixed(0)})`);
+
+    // A sheet is a cut-out, and a cut-out that comes back as a JPEG has a black
+    // box round it. Load one too big to keep as it is — noise, so it will not
+    // compress away — with a clear half, and see whether the clear half lived.
+    await ui.evaluate(() => new Promise((done) => {
+      const c = document.createElement("canvas");
+      c.width = 1200; c.height = 400;
+      const g = c.getContext("2d");
+      const d = g.createImageData(600, 400);
+      for (let i = 0; i < d.data.length; i += 4) {
+        d.data[i] = Math.random() * 255; d.data[i + 1] = Math.random() * 255;
+        d.data[i + 2] = Math.random() * 255; d.data[i + 3] = 255;
+      }
+      g.putImageData(d, 0, 0);          // left half opaque noise, right half untouched
+      c.toBlob((blob) => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], "sheet.png", { type: "image/png" }));
+        const inp = document.getElementById("mcFile");
+        document.getElementById("spAdd").click();
+        inp.files = dt.files;
+        inp.dispatchEvent(new Event("change"));
+        done();
+      }, "image/png");
+    }));
+    await ui.waitForTimeout(1500);
+    await ui.evaluate(() => new Promise((done) => {
+      let n = 0;
+      const tick = () => (++n < 10 ? requestAnimationFrame(tick) : done());
+      requestAnimationFrame(tick);
+    }));
+    const kept = await ui.evaluate(() => new Promise((done) => {
+      const bg = getComputedStyle(document.getElementById("sprite")).backgroundImage;
+      const m = /url\("?(data:[^"')]+)"?\)/.exec(bg);
+      if (!m) return done({ err: "no sheet on the element" });
+      const isPng = m[1].indexOf("data:image/png") === 0;
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const g = c.getContext("2d");
+        g.drawImage(img, 0, 0);
+        const px = g.getImageData(Math.round(c.width * 0.85), Math.round(c.height * 0.5), 1, 1).data;
+        done({ isPng, a: px[3], w: c.width, len: m[1].length });
+      };
+      img.onerror = () => done({ err: "will not decode" });
+      img.src = m[1];
+    }));
+    say(kept.isPng === true, `a sprite sheet too big to keep whole stays a PNG (${kept.err || kept.w + "px, " + Math.round(kept.len / 1024) + "kB"})`);
+    say(kept.a !== undefined && kept.a < 10,
+        `and its see-through half is still see-through (alpha ${kept.a})`);
     await ui.evaluate(() => { document.getElementById("spOn").click(); });
     say(await ui.evaluate(() => !document.getElementById("sprite").classList.contains("on")),
         "and off takes him away again");
