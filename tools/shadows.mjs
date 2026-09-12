@@ -70,6 +70,7 @@ async function pose(page, over) {
     s.depthSize = [0.80, 0.80]; s.depthPart = [0, 0, 0];
     s.mirror = [0, 0]; s.shift = 0;
     s.spriteOn = 0; s.sprite = 0; s.spriteSize = 0.20; s.spriteFrames = 4; s.spriteFps = 6;
+    s.ball = 0;
     s.flyMin = 0.030; s.flyMax = 12.0; s.lookSmooth = 0; s.moveSmooth = 0;
     Object.assign(s, o);
   }, over);
@@ -433,6 +434,36 @@ const run = async () => {
     const d = darkened(clearAir, thickAir, 6);
     say(d > 0.03, `and thickening it takes the distance away (${(d * 100).toFixed(1)}% of the frame)`);
 
+    // Travelling from the object toward a plain ball. At nothing it is the page
+    // as it was; all the way it is a ball, whichever object it started from.
+    await pose(page, { ...flat, ball: 0 });
+    if (off) say((await shot(page, "ball-none")).equals(off),
+                 "no blend to the sphere is byte-identical to the baseline");
+    await pose(page, { ...flat, ball: 0.5 });
+    const half = await shot(page, "ball-half");
+    await pose(page, { ...flat, ball: 1.0 });
+    const full = await shot(page, "ball-full");
+    say(off && !half.equals(off) && !full.equals(half),
+        "and it travels the whole way rather than jumping");
+    // Square-on, with the light straight down the view so nothing shades it
+    // sideways: this is the rig that can tell a round thing from a lopsided one.
+    const square = { scene: 1, fly: 1, flyPos: [0, 0, 2.6], flyYaw: Math.PI, flyPitch: 0,
+                     shift: 0, noise: 0, warpOn: [0, 0, 0], warpAmt: 0,
+                     shadowOn: 1, shadowSrc: 2, shadowOnly: 1, sunAz: 0, sunEl: 0.6 };
+    await pose(page, { ...square, ball: 0 });
+    const notRound = lopsided(await shot(page, "ball-square-off"), 4);
+    await pose(page, { ...square, ball: 1.0 });
+    const round = lopsided(await shot(page, "ball-square-on"), 4);
+    say(notRound > 0.05, `square-on, the neuron is nothing like round (${(notRound * 100).toFixed(1)}%)`);
+    say(round < 0.04 && round < notRound / 4,
+        `and all the way across it is a ball (${(notRound * 100).toFixed(1)}% -> ${(round * 100).toFixed(2)}%)`);
+    // each object starts somewhere different and so arrives at a ball of its own
+    await pose(page, { ...flat, ball: 1.0 });
+    const ballC = await shot(page, "ball-chrome");
+    await pose(page, { ...flat, scene: 0, ball: 1.0 });
+    say(!ballC.equals(await shot(page, "ball-brain")),
+        "each object arrives at a ball of its own size");
+
     // The mirror. Off is the page as it was; on, the object is folded in half
     // about the plane and the half that is left is drawn on both sides.
     await pose(page, { ...flat, mirror: [0, 0] });
@@ -449,9 +480,6 @@ const run = async () => {
 
     // Square-on to a folded object, the picture has to be its own reflection.
     // The neuron is the least symmetric thing here, so it is the one to ask.
-    const square = { scene: 1, fly: 1, flyPos: [0, 0, 2.6], flyYaw: Math.PI, flyPitch: 0,
-                     shift: 0, noise: 0, warpOn: [0, 0, 0], warpAmt: 0,
-                     shadowOn: 1, shadowSrc: 2, shadowOnly: 1, sunAz: 0, sunEl: 0.6 };
     await pose(page, { ...square, mirror: [0, 0] });
     const bare = lopsided(await shot(page, "mirror-square-off"), 4);
     await pose(page, { ...square, mirror: [1, 0] });
@@ -943,6 +971,20 @@ const spin = await ui.evaluate(() => {
     });
     say(pick.chosen && Math.abs(pick.dark - 0.77) < 1e-9,
         "shift-clicking one points at it without loading it");
+
+    // Moving one along the list moves the number it answers to with it.
+    const tplOrder = await ui.evaluate(() => {
+      const read = () => Array.prototype.map.call(
+        document.querySelectorAll("#tplSeg button"), (b) => b.textContent).join(" | ");
+      const before = read();
+      // point at the second without loading it, then walk it to the front
+      const btns = document.querySelectorAll("#tplSeg button");
+      btns[1].dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+      document.getElementById("tplUp").click();
+      return { before, after: read() };
+    });
+    say(tplOrder.before !== tplOrder.after && /^1 /.test(tplOrder.after),
+        `a template can be moved along the list (${tplOrder.before}  ->  ${tplOrder.after})`);
 
     // and the regression: a saved view is obeyed with no smoothing asked for
     await ui.evaluate(() => {

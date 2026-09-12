@@ -105,7 +105,7 @@ colour, which is what makes the left column scannable.
 | --- | --- |
 | **Construction** | Object, Navigation, Flight path |
 | **Camera** | how slow and how fast flight goes, and how much it lags the hand. See §3 |
-| **Object modifications** | the chrome build steps and their sliders, ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
+| **Object modifications** | the chrome build steps and their sliders, **Blend to sphere**, ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
 | **Rendering** | Resolution, Antialias, Frame rate |
 | **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
 | **Material** | MatCap and its sphere, the normal map and its. See §16 and §20 |
@@ -756,13 +756,19 @@ Ten of them.
 | **Fade to next** | 0-1, cross-fade from here to the next one along |
 | **Save as** | name this moment and keep it |
 | **Update** | write over the one showing as chosen, keeping its name and number |
+| **Earlier / Later** | move the chosen one a place along the list |
 | **Rename** | give the one showing as chosen a different name; nothing it holds changes |
 | **Delete** | remove the one showing as chosen |
 
 `alt`+`1`–`0` recalls the template in that slot, counting the list from the top;
 `alt+0` is the tenth. Applying one brings its arrangement (§22) with it.
 
-**Update**, **Rename** and **Delete** all act on the template showing as chosen.
+The number a template answers to is simply **its place in the list**, so
+**Earlier** and **Later** move its `alt` shortcut with it. The order is kept in
+this browser and in the cloud, so the list is the same on another machine.
+
+**Update**, **Rename**, **Earlier**, **Later** and **Delete** all act on the
+template showing as chosen.
 A plain click on one both chooses it and loads it; **shift** and a click only
 chooses it — so the one to be renamed or deleted need not be the one you are
 sitting on, and nothing you have set up is lost to get at it.
@@ -979,3 +985,28 @@ is kept at because a strip of frames needs the room, and **Keep** holds on to it
 in this browser and in the cloud like any other image. A template remembers the sheet,
 the size, the frame count and the speed — but not which frame he is on, which
 follows the clock on the wall rather than the field's.
+
+---
+
+## 29. Blend to sphere
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Blend to sphere** | 0-1 | 0.00 |
+
+Travels from whatever the object builds toward a plain ball, and back. It is
+real geometry the whole way: the silhouette moves, and the shadows, the glow
+and anything marching through it follow. At **nothing** the object is untouched
+to the byte.
+
+Two fields that are each a lower bound on a distance blend into one that still
+is, so the march needs no help for this and pays nothing extra for it — unlike
+a warp, which has to be divided down. The ball is read in world coordinates
+before any warp is applied, so it stays a ball however bent the space around it
+is, and a fold about a plane through its centre leaves it alone.
+
+The ball is sized to whichever object it started from, so each one arrives
+somewhere different. The bounding volume grows to hold it when the slider is
+off nothing — the chrome slab's own box is a fraction of a unit thick, and
+anything outside the bounds is never marched at all, so without that the ball
+would come out sliced flat.
