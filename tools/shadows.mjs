@@ -986,6 +986,51 @@ const spin = await ui.evaluate(() => {
     say(tplOrder.before !== tplOrder.after && /^1 /.test(tplOrder.after),
         `a template can be moved along the list (${tplOrder.before}  ->  ${tplOrder.after})`);
 
+    // A number typed past the end of its slider is the whole point of being
+    // able to type one, so a template has to give it back as it was put in —
+    // not as the slider's own end.
+    const beyond = await ui.evaluate(() => {
+      const s = window.__state;
+      const btns = document.querySelectorAll("#tplSeg button");
+      btns[0].dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+      const out = document.getElementById("pGlowOut");
+      out.textContent = "10";                       // the slider stops at 4
+      out.dispatchEvent(new FocusEvent("blur"));
+      const typed = s.glow;
+      document.getElementById("tplUpd").click();
+      s.glow = 1;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "1", code: "Digit1", altKey: true, bubbles: true }));
+      return { typed, back: s.glow, reading: document.getElementById("pGlowOut").textContent };
+    });
+    say(Math.abs(beyond.typed - 10) < 1e-9,
+        `a value can be typed past the end of its slider (${beyond.typed})`);
+    say(Math.abs(beyond.back - 10) < 1e-9,
+        `and a template gives it back as it was put in (${beyond.back}, reading "${beyond.reading}")`);
+
+    // A sheet with nothing see-through in it says so, rather than quietly
+    // standing in a black box and leaving it to be guessed at.
+    const flat = await ui.evaluate(() => new Promise((done) => {
+      const c = document.createElement("canvas");
+      c.width = 256; c.height = 64;
+      const g = c.getContext("2d");
+      g.fillStyle = "#000"; g.fillRect(0, 0, 256, 64);
+      g.fillStyle = "#fff"; g.fillRect(8, 8, 48, 48);
+      c.toBlob((blob) => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], "flat.png", { type: "image/png" }));
+        const inp = document.getElementById("mcFile");
+        document.getElementById("spAdd").click();
+        inp.files = dt.files;
+        inp.dispatchEvent(new Event("change"));
+        // the list itself carries it, where a toast cannot be overwritten
+        setTimeout(() => {
+          const btns = document.querySelectorAll("#spSeg button");
+          done((btns[btns.length - 1] || {}).title || "");
+        }, 900);
+      }, "image/png");
+    }));
+    say(/no see-through/.test(flat), `a flat sheet is called out rather than guessed at ("${flat}")`);
+
     // and the regression: a saved view is obeyed with no smoothing asked for
     await ui.evaluate(() => {
       const s = window.__state;

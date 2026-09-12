@@ -485,6 +485,10 @@ fetch and no lights at all.
 | **Sphere** | Which one. Two are built in — **Chrome**, a polished ball on a dark stand, and **Normals**, which is not a photograph but the surface direction written straight into the colour. |
 | **Add…** | Load an image from this computer. It joins the list and is used at once, brought down to 512 across — or 1600 for a sprite sheet, which needs the room. An image that is **see-through** keeps its transparency: it is made smaller until it fits rather than re-encoded as a JPEG, which has no alpha channel and would put a black box around a cut-out. |
 | **Keep** | Hold on to the chosen sphere — in this browser, and in the cloud so it follows the page to another computer. The two built-in ones are already there. |
+
+An image loaded with nothing see-through anywhere in it is **marked as such in
+the list** — hover it and the name says so. A sheet exported flat looks exactly
+like one this page has flattened, and only one of those is anybody's to fix.
 | **Delete** | Remove the chosen sphere from both. The built-in two stay. |
 
 The same list feeds the **Shadow sphere** picker in §15, the **Map** picker in
@@ -558,6 +562,13 @@ Every slider's reading can be clicked and typed into. The slider is a
 convenience and not the range: what is typed is taken as it is, even when the
 thumb has to sit at one end to show it, so a value past either end of a slider
 is reached by typing it. `Enter` commits, `Esc` puts the old reading back.
+
+**And it survives being put away and fetched back.** A value typed past the end
+of its slider is saved and restored as it was typed, not as the slider's own
+end — by the saved default, by a template, and by the cross-fade. Showing such a
+value on its slider clamps it, and the slider's own handler would otherwise
+write that clamp back into the settings, which is what used to turn a Glow of 10
+into a Glow of 4 the moment its template was recalled.
 
 **And a way back to the default.** Beside the reading, while the two differ,
 sits what the value would be in the saved default (§9), written the same way —
@@ -980,7 +991,8 @@ him standing there — he is part of the shot, not part of the console.
 
 **Add** takes a sprite sheet: every frame side by side in one strip, any size,
 **transparency and all** — a cut-out stays a cut-out however big the sheet is
-(see §16). It goes into the same list §16 keeps, at a larger size than a sphere
+(see §16), and a sheet that has no transparency in it to begin with says so when
+it is loaded and is marked in the list, rather than quietly standing in a box. It goes into the same list §16 keeps, at a larger size than a sphere
 is kept at because a strip of frames needs the room, and **Keep** holds on to it
 in this browser and in the cloud like any other image. A template remembers the sheet,
 the size, the frame count and the speed — but not which frame he is on, which
