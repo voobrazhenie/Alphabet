@@ -90,7 +90,7 @@ in. Slots are part of "Save as default".
 
 ## 5. Console
 
-**Eleven folding groups, plus an ungrouped footer.** Every group is a filled
+**Thirteen folding groups, plus an ungrouped footer.** Every group is a filled
 header bar exactly one row high — icon, name, and the fold arrow — with a box of
 the same width hanging off it holding everything the group contains. A clear gap
 sits between the last thing in one group and the next group's header.
@@ -110,6 +110,8 @@ colour, which is what makes the left column scannable.
 | **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
 | **Material** | MatCap and its sphere, the normal map and its. See §16 and §20 |
 | **Depth map** | an image thrown at one part of the object, and the gizmo that aims it. See §24 |
+| **Mirror** | fold the object in half about a plane. See §27 |
+| **Overlay** | a sprite standing over the picture. See §28 |
 | **Transparency** | whether the eye goes through the surface, and what it finds. See §21 |
 | **Post** | the air the object stands in, and what happens to the finished frame. See §17 |
 | **UI** | how the console itself looks, and Arrange. See §19 and §22 |
@@ -750,14 +752,20 @@ Ten of them.
 
 | Control | |
 | --- | --- |
-| **Stored** | the templates there are. Clicking one applies it |
+| **Stored** | the templates there are. Clicking one applies it; **shift**-clicking only points at it |
 | **Fade to next** | 0-1, cross-fade from here to the next one along |
 | **Save as** | name this moment and keep it |
 | **Update** | write over the one showing as chosen, keeping its name and number |
+| **Rename** | give the one showing as chosen a different name; nothing it holds changes |
 | **Delete** | remove the one showing as chosen |
 
 `alt`+`1`–`0` recalls the template in that slot, counting the list from the top;
 `alt+0` is the tenth. Applying one brings its arrangement (§22) with it.
+
+**Update**, **Rename** and **Delete** all act on the template showing as chosen.
+A plain click on one both chooses it and loads it; **shift** and a click only
+chooses it — so the one to be renamed or deleted need not be the one you are
+sitting on, and nothing you have set up is lost to get at it.
 
 A template holds **when** as well as **what**. The three clocks — the flight
 path's, the field's and the impulses' — are saved with everything else, and this
@@ -775,6 +783,14 @@ Let go anywhere in between and you stay there; take it back to nothing and you
 are exactly where you started. Take it all the way and that template becomes the
 one you are on, the fader returns to nothing, and the next one along is the one
 after it — so a chain of templates can be walked through one fade at a time.
+Headings cross **the short way round**. An angle has no size, only a direction:
+7.5 radians and 1.2 are the same way round, and a heading left to accumulate
+picks up whole turns nothing can see — until something interpolates it, and they
+all come out at once as a spin. So headings are kept inside half a turn either
+side of nothing, and every difference between two of them is taken the short
+way; the half-way point of a cross-fade is never more than a quarter turn from
+either end.
+
 **Which object is on screen never changes**, at any point of the fade or at the
 end of it: a fader is for crossing between looks, and a cut to another object is
 not one. The clocks do not cross either — the animation keeps running through
@@ -907,3 +923,58 @@ producing the same frame to the byte.
 Two things stayed runtime checks because leaving them out would not pay for a
 variant of its own: **Noise** at zero skips its hash, and **Haze** and **Glow**
 are one multiply each.
+
+---
+
+## 27. Mirror
+
+Blender's mirror modifier, the way a distance field does it. Two switches:
+
+| Control | |
+| --- | --- |
+| **Mirror X** | fold about the up-down plane: one side is drawn on both |
+| **Mirror Y** | fold about the horizontal plane: the top half is the bottom half too |
+
+Folding the space in half is one instruction — take the absolute value of that
+coordinate before the object is looked up — and a fold is an isometry on each
+side of it, so the field stays a valid lower bound on the distance and the march
+pays nothing for it. It is **real geometry**: the silhouette, the shadows, the
+shading, the glow and anything marching through it all follow.
+
+Both together fold the object into a quarter and draw that quarter four times.
+Neither is the object as it was, to the byte.
+
+The fold is applied **after** the depth decal has been read, so the decal's card
+stays where it was put and its beam falls on the mirrored half like anything
+else standing in the world.
+
+---
+
+## 28. Overlay
+
+A sprite standing over the render, walking a sheet of frames on a loop.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Overlay** | off / on | off |
+| **Sprite** | which image, from the one shared list of §16 | Chrome |
+| **Add / Keep / Delete** | as §16, on the chosen **sprite** | |
+| **Size** | 3-80% of the window's height | 20% |
+| **Frames** | 1-16 laid side by side in the sheet | 4 |
+| **Speed** | 0-24 frames a second | 6.0 |
+
+He stands **centred across** the window and keeps **a twentieth of its height
+clear beneath him** — so at the size he comes at, three quarters of the height
+is open above his head. Both follow the window as it is resized, since both are
+measured in it rather than in pixels.
+
+It is a plain element laid over the canvas, not anything in the shader: it costs
+the render nothing and cannot disturb a pixel of it. Hiding the panels leaves
+him standing there — he is part of the shot, not part of the console.
+
+**Add** takes a sprite sheet: every frame side by side in one strip, any size.
+It goes into the same list §16 keeps, at a larger size than a sphere is kept at
+because a strip of frames needs the room, and **Keep** holds on to it in this
+browser and in the cloud like any other image. A template remembers the sheet,
+the size, the frame count and the speed — but not which frame he is on, which
+follows the clock on the wall rather than the field's.

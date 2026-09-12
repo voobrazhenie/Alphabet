@@ -87,7 +87,10 @@ does not). `elementFromPoint` returns nothing outside the viewport, so a drag
 only lands if both ends are actually on screen: fold the groups first, or give
 that page a tall viewport. The console checks open a page of their own for
 exactly that reason — the shader checks hide the interface and run at a size no
-menu would fit in.
+menu would fit in. Folding is not always enough, and it gets less enough every
+time a group is added: the last module of an open group can sit past the bottom
+of even a 1300-tall page. Scroll the thing being dragged into view first
+(`scrollIntoView({block:"center"})`) rather than trusting that it fits.
 
 Always check: all three objects still compile and render, and no page errors.
 

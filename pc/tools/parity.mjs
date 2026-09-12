@@ -199,6 +199,7 @@ const renderPair = async ([webSrc, portSrc, u, W, H]) => {
       // the page entirely and make every case differ.
       set("uHaze", "uniform1f", 1.0);
       set("uGlow", "uniform1f", 1.0);
+      set("uMirror", "uniform2f", 0.0, 0.0);   // the port has no mirror; unfolded is zero
       set("uBoundPad", "uniform1f", u.boundPad);
       set("uWarpMode", "uniform1f", u.warpMode);
       const web = draw();

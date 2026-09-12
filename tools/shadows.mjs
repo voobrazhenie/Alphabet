@@ -68,6 +68,9 @@ async function pose(page, over) {
     s.depthOn = 0; s.depthMc = 0; s.depthAmt = 0.12; s.depthDist = 1.20;
     s.depthPos = [0, 0, 1.80]; s.depthRot = [0, 0, 0, 1];
     s.depthSize = [0.80, 0.80]; s.depthPart = [0, 0, 0];
+    s.mirror = [0, 0]; s.shift = 0;
+    s.spriteOn = 0; s.sprite = 0; s.spriteSize = 0.20; s.spriteFrames = 4; s.spriteFps = 6;
+    s.flyMin = 0.030; s.flyMax = 12.0; s.lookSmooth = 0; s.moveSmooth = 0;
     Object.assign(s, o);
   }, over);
   // Software rendering runs at a few frames a second, so waiting on the clock is
@@ -131,6 +134,25 @@ function darkened(a, b, drop) {
   for (let i = 0; i + 2 < A.data.length; i += A.bpp) {
     total++;
     if (lum(A.data, i) - lum(B.data, i) > drop) n++;
+  }
+  return n / total;
+}
+
+// How far a frame is from being its own reflection about the vertical centre.
+// A folded object seen square-on has to be symmetric, and nothing else here is
+// a test of whether the fold actually folds rather than merely changes things.
+function lopsided(png, drop) {
+  const A = decode(png);
+  let n = 0, total = 0;
+  for (let y = 0; y < A.h; y++) {
+    for (let x = 0; x < (A.w >> 1); x++) {
+      const i = y * A.w * A.bpp + x * A.bpp;
+      const j = y * A.w * A.bpp + (A.w - 1 - x) * A.bpp;
+      total++;
+      for (let c = 0; c < 3; c++) {
+        if (Math.abs(A.data[i + c] - A.data[j + c]) > drop) { n++; break; }
+      }
+    }
   }
   return n / total;
 }
@@ -411,6 +433,35 @@ const run = async () => {
     const d = darkened(clearAir, thickAir, 6);
     say(d > 0.03, `and thickening it takes the distance away (${(d * 100).toFixed(1)}% of the frame)`);
 
+    // The mirror. Off is the page as it was; on, the object is folded in half
+    // about the plane and the half that is left is drawn on both sides.
+    await pose(page, { ...flat, mirror: [0, 0] });
+    if (off) say((await shot(page, "mirror-off")).equals(off),
+                 "no fold is byte-identical to the baseline");
+    await pose(page, { ...flat, mirror: [1, 0] });
+    const mx = await shot(page, "mirror-x");
+    await pose(page, { ...flat, mirror: [0, 1] });
+    const my = await shot(page, "mirror-y");
+    await pose(page, { ...flat, mirror: [1, 1] });
+    const mb = await shot(page, "mirror-both");
+    say(off && !mx.equals(off) && !my.equals(off) && !mx.equals(my) && !mb.equals(mx) && !mb.equals(my),
+        "each fold, and the pair of them, is its own shape");
+
+    // Square-on to a folded object, the picture has to be its own reflection.
+    // The neuron is the least symmetric thing here, so it is the one to ask.
+    const square = { scene: 1, fly: 1, flyPos: [0, 0, 2.6], flyYaw: Math.PI, flyPitch: 0,
+                     shift: 0, noise: 0, warpOn: [0, 0, 0], warpAmt: 0,
+                     shadowOn: 1, shadowSrc: 2, shadowOnly: 1, sunAz: 0, sunEl: 0.6 };
+    await pose(page, { ...square, mirror: [0, 0] });
+    const bare = lopsided(await shot(page, "mirror-square-off"), 4);
+    await pose(page, { ...square, mirror: [1, 0] });
+    const fold = lopsided(await shot(page, "mirror-square-on"), 4);
+    say(bare > 0.05, `square-on, the neuron is not symmetric to start with (${(bare * 100).toFixed(1)}%)`);
+    // the shot is the canvas at its CSS size and not its backing store, so a
+    // perfectly symmetric render still resamples to a few uneven edge pixels
+    say(fold < bare / 4 && fold < 0.04,
+        `and folded about x it is its own reflection (${(bare * 100).toFixed(1)}% off -> ${(fold * 100).toFixed(2)}%)`);
+
     // The depth decal. A beam with no bite in it has to cost the march nothing
     // whatsoever: its bounding box is evaluated per sample and a box that only
     // ever shortens a step would still move where a ray lands.
@@ -604,6 +655,12 @@ const run = async () => {
     say(moved.inState, "and the move is in the state, not only on screen");
     say(moved.dirty, "and the console says so until it is saved");
 
+    await only([5]);
+    // The console grows every time a group is added, and a drag only lands if
+    // BOTH ends are on screen: the last module of a group can sit past the
+    // bottom of the page even with everything else folded away.
+    await ui.evaluate(() => document.querySelector('.mod[data-mod="gdepth"]').scrollIntoView({ block: "center" }));
+    await ui.waitForTimeout(250);
     await drag('.mod[data-mod="gdepth"] .mgrip', '.mod[data-mod="gopacity"]', false);
     const inside = await ui.evaluate(() => (window.__state.uiMods["5"] || []).join(","));
     say(inside.indexOf("gdepth") < inside.indexOf("gopacity"), "and reordered inside one group");
@@ -701,6 +758,48 @@ const run = async () => {
         `raising the floor past the speed carries the speed with it (${cam.dragged})`);
     say(cam.floor < 0.001, `and a typed number goes below the slider (${cam.floor})`);
 
+    // ---- the overlay ----------------------------------------------------
+    // A plain element over the canvas, so the check is where it stands and how
+    // big it is rather than anything about pixels.
+    await only([12]);
+    await ui.evaluate(() => {
+      const s = window.__state;
+      // this page draws about a frame a second at full size, and the sheet is
+      // only picked up on a frame: make frames cheap before waiting on one
+      s.resPin = 1; s.scaleQ = 0.30; s.stepsPin = true; s.steps = 48; s.aa = 0;
+      s.sprite = 0; s.spriteFrames = 4; s.spriteSize = 0.20;
+      document.getElementById("spOn").click();
+    });
+    await ui.evaluate(() => new Promise((done) => {
+      let n = 0;
+      const tick = () => (++n < 10 ? requestAnimationFrame(tick) : done());
+      requestAnimationFrame(tick);
+    }));
+    await ui.waitForTimeout(600);
+    const ov = await ui.evaluate(() => {
+      const el = document.getElementById("sprite");
+      return { on: el.classList.contains("on"),
+               h: parseFloat(el.style.height) || 0,
+               size: getComputedStyle(el).backgroundSize,
+               bottom: parseFloat(getComputedStyle(el).bottom) || 0,
+               H: document.getElementById("stage").clientHeight };
+    });
+    say(ov.on, "the overlay puts the sprite on screen");
+    say(Math.abs(ov.h - ov.H * 0.20) < 1.5,
+        `a fifth of the window tall (${ov.h.toFixed(0)} of ${ov.H})`);
+    say(Math.abs(ov.bottom - ov.H * 0.05) < 1.5,
+        `standing a twentieth of it clear of the bottom (${ov.bottom.toFixed(0)})`);
+    say(/400%/.test(ov.size), `and four frames wide in the sheet (${ov.size})`);
+    const grew = await ui.evaluate(() => {
+      const i = document.getElementById("spSize");
+      i.value = 40; i.dispatchEvent(new Event("input"));
+      return parseFloat(document.getElementById("sprite").style.height) || 0;
+    });
+    say(grew > ov.h * 1.8, `and Size makes him bigger (${ov.h.toFixed(0)} -> ${grew.toFixed(0)})`);
+    await ui.evaluate(() => { document.getElementById("spOn").click(); });
+    say(await ui.evaluate(() => !document.getElementById("sprite").classList.contains("on")),
+        "and off takes him away again");
+
     // ---- a template remembers when, not just what -----------------------
     await only([8]);
     const when = await ui.evaluate(() => {
@@ -746,6 +845,77 @@ const run = async () => {
     say(fade.scene === 0 && fade.land === 0, "and leaves the object where it is, the whole way across");
     say(Math.abs(fade.end - 0.42) < 1e-9 && fade.back === 0,
         "all the way across lands on it and the fader goes back to nothing");
+
+    // A heading has no size, only a direction: crossing from 6.2 to 0.2 is a
+    // sixth of a turn, not five sixths of one the other way.
+const spin = await ui.evaluate(() => {
+      const s = window.__state;
+      const mix = document.getElementById("tplMix");
+      s.flyYaw = 6.20;                       // just short of all the way round
+      mix.value = 0; mix.dispatchEvent(new Event("input"));
+      mix.value = 50; mix.dispatchEvent(new Event("input"));
+      const half = s.flyYaw;
+      mix.value = 0; mix.dispatchEvent(new Event("input"));
+      return { half, from: 6.20 };
+    });
+    // Taken the short way, the half-way heading can never be more than a
+    // quarter turn from either end, whatever the far end happens to be.
+    const TAU = Math.PI * 2;
+    const wrap = (a) => { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI; };
+    const swung = Math.abs(wrap(spin.half - spin.from));
+    say(swung <= Math.PI / 2 + 1e-6,
+        `a heading crosses the short way round (a ${swung.toFixed(2)} rad swing to the half-way point)`);
+
+    // Renaming one, and pointing at one without loading it
+    const renamed = await ui.evaluate(() => {
+      const s = window.__state;
+      s.shadowDark = 0.5;
+      const was = window.prompt;
+      window.prompt = () => "Dawn";
+      document.getElementById("tplRen").click();
+      window.prompt = was;
+      return { labels: Array.prototype.map.call(
+                 document.querySelectorAll("#tplSeg button"), (b) => b.textContent).join(" | "),
+               dark: s.shadowDark };
+    });
+    say(/Dawn/.test(renamed.labels) && Math.abs(renamed.dark - 0.5) < 1e-9,
+        `Rename changes the name and nothing else (${renamed.labels})`);
+
+    const pick = await ui.evaluate(() => {
+      const s = window.__state;
+      s.shadowDark = 0.77;
+      const btns = document.querySelectorAll("#tplSeg button");
+      const want = btns[0].getAttribute("aria-pressed") === "true" ? 1 : 0;
+      btns[want].dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+      // the list is rebuilt by the click, so ask the new buttons, not the old
+      const now = document.querySelectorAll("#tplSeg button");
+      return { chosen: now[want].getAttribute("aria-pressed") === "true", dark: s.shadowDark };
+    });
+    say(pick.chosen && Math.abs(pick.dark - 0.77) < 1e-9,
+        "shift-clicking one points at it without loading it");
+
+    // and the regression: a saved view is obeyed with no smoothing asked for
+    await ui.evaluate(() => {
+      const s = window.__state;
+      s.lookSmooth = 0; s.moveSmooth = 0; s.fly = 1;
+      s.flyPos = [1.5, 2.5, 3.5]; s.flyYaw = 0.5; s.flyPitch = 0.2;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "5", code: "Digit5", shiftKey: true, bubbles: true }));
+      s.flyPos = [9, 9, 9]; s.flyYaw = 2.5; s.flyPitch = -0.4;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "5", code: "Digit5", bubbles: true }));
+    });
+    await ui.evaluate(() => new Promise((done) => {
+      let n = 0;
+      const tick = () => (++n < 8 ? requestAnimationFrame(tick) : done());
+      requestAnimationFrame(tick);
+    }));
+    const got = await ui.evaluate(() => {
+      const g = { pos: window.__state.flyPos.slice(), yaw: window.__state.flyYaw };
+      window.__state.fly = 0;          // hand the camera back before the gizmo checks
+      return g;
+    });
+    say(Math.abs(got.pos[0] - 1.5) < 1e-6 && Math.abs(got.pos[2] - 3.5) < 1e-6 &&
+        Math.abs(got.yaw - 0.5) < 1e-6,
+        `a saved view stays put with no smoothing (${got.pos.map((v) => v.toFixed(1)).join(",")})`);
 
     // ---- the decal group, and the gizmo that aims it -------------------
     // The parts a decal can be aimed at belong to the object, so the list has
