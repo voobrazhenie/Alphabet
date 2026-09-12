@@ -553,6 +553,19 @@ const run = async () => {
     const swing = Math.max(...held) - Math.min(...held);
     say(swing === 0, `a walker standing still does not drift or shiver (${swing.toExponential(1)})`);
 
+    // ...and holding still is not the same as being stuck: a floor that is
+    // really moving is followed, because two readings in a row agree about it.
+    await page.evaluate(() => { window.__state.morph = true; window.__state.mClock = 0; });
+    const alive = await page.evaluate(() => new Promise((done) => {
+      const ys = []; let n = 0;
+      const t = () => { ys.push(window.__state.flyPos[1]);
+        if (++n < 40) requestAnimationFrame(t); else done(ys); };
+      requestAnimationFrame(t);
+    }));
+    const rode = Math.max(...alive) - Math.min(...alive);
+    say(rode > 1e-4, `and a floor that is really moving is ridden, not ignored (${rode.toExponential(1)})`);
+    await page.evaluate(() => { window.__state.morph = false; });
+
     // Every shortcut is read by where the key is, not by what it prints: on a
     // Russian layout P prints з, and the page has to take it just the same.
     const foreign = await page.evaluate(() => {
@@ -1364,6 +1377,22 @@ const spin = await ui.evaluate(() => {
     say(/glow = 3/.test(cmd.lines), "get reads it back");
     say(/do not know/.test(cmd.lines), "and it says so when it does not know a word");
     say(cmd.before > 3 && cmd.after === 0, "clear empties the log");
+
+    const dumped = await ui.evaluate(async () => {
+      const inp = document.getElementById("termIn");
+      inp.value = "dump";
+      inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+      await new Promise((d) => setTimeout(d, 120));
+      const text = document.getElementById("termLog").textContent;
+      const m = text.match(/\{"scene".*\}/);
+      let parsed = null;
+      try { parsed = JSON.parse(m ? m[0] : ""); } catch (e) { parsed = null; }
+      return { has: !!m, keys: parsed ? Object.keys(parsed).length : 0,
+               named: !!(parsed && parsed.walkSize !== undefined && parsed.seed !== undefined) };
+    });
+    say(dumped.has && dumped.keys > 80,
+        `dump writes every setting out as JSON (${dumped.keys} of them)`);
+    say(dumped.named, "including the ones added last");
 
     // a notice the page gives is written down as well
     const noted = await ui.evaluate(() => {

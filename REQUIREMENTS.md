@@ -1108,6 +1108,15 @@ has moved by more than **a few percent of the walker's own height** — far belo
 anything an eye can see, and it scales when the walker does. A walk *over* the
 ground keeps the tight tolerance instead, or it would climb a slope in steps.
 
+A tolerance alone is not enough, because how big the march's own error is
+depends on the relief and the warp and can be wider than any fixed number. So
+there is a second rule, and it does not depend on the size of anything: **while
+standing, only act on a reading the frame before it already agreed with.** A
+cycle cannot do that — the act of correcting the eye is what changes the next
+answer, so two readings in a row never match. A floor that is really there, or
+one that is moving because the field is animating, does match, and is followed
+as it moves.
+
 **Where there is nothing below, there is nothing to stand on.** The chrome
 object in its default *intersect* mode is islands with real gaps between them —
 the two slabs only overlap where the height field is shallow — so a walker can
@@ -1244,6 +1253,8 @@ a notice you missed is not a notice.
 | `set <name> <value>` | change one |
 | `find <text>` | every setting whose name has that in it |
 | `keys` | what the keyboard does |
+| `dump` | every setting as JSON, and on the clipboard |
+| `dump <name or number>` | one template the same way |
 | `clear` | empty the log |
 
 A name is any setting that a saved default holds — the same list a template is
@@ -1253,6 +1264,12 @@ JSON array for the ones that are lists (`set warpOn [1,0,1]`). A value typed
 here goes in **through the same controls a hand would use**, so the menu, the
 readings and the pressed states all follow. A name that does not exist comes
 back with the closest ones that do.
+
+`dump` is how a setting or a template leaves the machine it was made on. It
+writes the JSON into the log and puts it on the clipboard, so a template that
+only exists in one browser can be handed to someone else — which matters
+because the cloud copy of a template can be written but, under the rules the
+project has, not listed back.
 
 The up and down arrows walk back through what has been typed. The log keeps the
 last 400 lines.
