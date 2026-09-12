@@ -109,7 +109,7 @@ colour, which is what makes the left column scannable.
 | --- | --- |
 | **Construction** | Object, Navigation, Flight path |
 | **Camera** | how slow and how fast flight goes, and how much it lags the hand (§3); walking, jumping and step sounds (§30); the lens and depth of field (§31) |
-| **Object modifications** | the chrome build steps and their sliders, **Blend to sphere**, ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
+| **Object modifications** | the chrome build steps and their sliders, **Blend to sphere**, **Seed** (§32), **Time** (§8), ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
 | **Rendering** | Resolution, Antialias, Frame rate |
 | **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
 | **Material** | MatCap and its sphere, the normal map and its. See §16 and §20 |
@@ -179,14 +179,34 @@ Twist and bend are space warps in both modes.
 ## 8. Animation
 
 - **Flight** (`space`) stops the camera and the field together.
-- **Morph** (`M`) animates the field.
+- **Morph** (`shift+M`) animates the field.
 - **Impulses** (`I`) are travelling lights, rate 0–11 Hz.
+
+**Time** is the field's own clock, in seconds, shown as a number that runs.
+**Play** (`P`) runs it and holds it still, **Rewind** puts it back to the start,
+and a number typed into the reading puts the field at that moment. Play and
+Morph are one switch shown twice — the transport beside the clock, and the
+button in Animation — so both light up together. The impulse clock goes
+wherever the field's clock is put, because the lights belong to the same moment
+as the shape.
+
+The clock is part of a saved setting and of a template, so a template comes back
+to the moment it was saved at as well as to the shape (§23).
 
 ## 9. Saved settings
 
 **Save as default** stores everything the console can set, the fly camera's
 position and heading, the six viewpoint slots, which groups are open, and how
 the console is arranged (§22).
+
+**A saved setting is a complete description.** One written before a control
+existed says nothing about that control, and what it means is **the page as it
+ships** — not whatever happens to be set at the moment it is recalled. So
+every template from before walking existed comes back **flying**, with the
+walker at its standard size and the seed at zero, rather than leaving walking on
+because walking happened to be on. Two things are exempt, because neither is
+what the picture looks like: the console's own arrangement (§22) and the six
+viewpoint slots. A setting that never mentioned those leaves them alone.
 
 **Reset** goes back to whatever was last saved as the default — not to the
 built-in settings — and it deletes nothing: the saved default stays saved and
@@ -292,6 +312,7 @@ browser's, given the same object and settings.
 | `*` | Stand where the sun does, and come back |
 | `M` | Fold every group away, or open them all |
 | `shift+M` | Morph |
+| `P` | Play and pause the field's clock |
 | `I` | Impulses |
 | `R` | New viewpoint |
 | `1` `2` `3` `4` | Auto / Half / Native / FHD resolution |
@@ -1079,8 +1100,16 @@ ever.
 | **Run** | on / off | on |
 | **Steps** | on / off | off |
 | **Add** (step sample) | a file from this computer | none |
+| **Controller size** | 0.01–4.00, or typed | 1.00 |
 | **Walk speed** | 0.03-4.00, or typed | 0.45 |
 | **Jump height** | 0.01-2.00, or typed | 0.22 |
+
+**Controller size is one knob for the whole body.** How tall the walker stands,
+how long its stride is, how fast it walks and how high it jumps all scale with
+it together — which is what stops a slider that shrinks the walker to an ant
+from also turning it into a rocket. Turn it right down to walk over the fine
+detail of an object rather than striding across it; the ground it finds is the
+same ground either way, it is simply standing closer to it.
 
 **Jump height is the height**, not an impulse: gravity is worked back out of the
 number so that a jump of 0.22 rises 0.22 and lands again, whatever else is set.
@@ -1138,3 +1167,30 @@ distance fade ends at.
 post pass does not gather at all: the frame is byte-identical to the frame
 before this existed. **Blur** at zero is the same frame again, with the switch
 on.
+
+---
+
+## 32. Seed
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Seed** | 0-999 on the slider, any number typed | 0 |
+| **Roll** | takes one at random | |
+
+One number decides **which roll of everything generated is on screen**: where
+the brain's cells sit, which way the neuron's dendrites leave the soma, what the
+chrome landscape looks like, and how the domain warp falls. Nothing about the
+*kind* of object changes — a brain is still a brain, with the same cell pitch
+and the same shell — only which particular one.
+
+**Zero is the page's own roll**, so it is what every stored baseline, the native
+port and every template written before this existed all mean, and the frame at
+seed zero is byte-identical to the frame before the control existed.
+
+It is one place to look in the noise rather than a number fed into it: the seed
+becomes an offset, three strides that share no common measure, added to the
+coordinate each noise lattice and each cell id is read at. That costs one
+addition per sample instead of one per hash — a noise lookup takes eight hashes
+— and it means two seeds never land on the same lattice. The seed is saved with
+a template, and crossing between two templates **flips** it at the half-way
+mark rather than sliding through every roll in between.

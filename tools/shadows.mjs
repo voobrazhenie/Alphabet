@@ -75,7 +75,8 @@ async function pose(page, over) {
                   // through that one
     s.dofOn = 0; s.dofFocus = 3.0; s.dofRange = 0.8; s.dofBlur = 4.0;
     s.walkOn = 0; s.walkSpeed = 0.45; s.jumpHeight = 0.22;
-    s.jumpOn = 1; s.runOn = 1; s.stepsOn = 0;
+    s.jumpOn = 1; s.runOn = 1; s.stepsOn = 0; s.walkSize = 1.0;
+    s.seed = 0;   // every baseline is the roll the page ships with
     s.flyMin = 0.030; s.flyMax = 12.0; s.lookSmooth = 0; s.moveSmooth = 0;
     Object.assign(s, o);
   }, over);
@@ -520,6 +521,63 @@ const run = async () => {
     const down = await page.evaluate(() => ({ y: window.__state.flyPos[1], on: window.__walk.onGround }));
     say(down.on && Math.abs(down.y - landed.y) < 0.02,
         `and it comes back down to the same ground (${down.y.toFixed(3)})`);
+
+    // Controller size. The same ground, and a walker a tenth as tall stands a
+    // tenth as high off it.
+    await pose(page, { scene: 2, shadowOn: 0, fly: 1, walkOn: 1, lookSmooth: 0, moveSmooth: 0,
+                       flyPos: [0, 3, 0], flyYaw: Math.PI, flyPitch: 0, walkSize: 0.1,
+                       warpOn: [0, 0, 0], warpAmt: 0, lcOn: [1, 1, 1, 0, 1, 0] });
+    for (let i = 0; i < 10; i++) await frames();
+    const small = await page.evaluate(() => ({ y: window.__state.flyPos[1], on: window.__walk.onGround }));
+    say(small.on && small.y > 0 && small.y < landed.y * 0.35,
+        `a smaller controller stands lower on the same ground (${landed.y.toFixed(3)} -> ${small.y.toFixed(3)})`);
+
+    // The seed. Zero is the roll every baseline was shot at, and the picture is
+    // that one to the byte; any other seed is another object of the same kind.
+    await pose(page, { ...flat, seed: 0 });
+    if (off) say((await shot(page, "seed-zero")).equals(off),
+                 "seed zero is byte-identical to the baseline");
+    await pose(page, { ...flat, seed: 7 });
+    const roll7 = await shot(page, "seed-7");
+    say(off && !roll7.equals(off), "and another seed is another object of the same kind");
+    await pose(page, { ...flat, seed: 8 });
+    say(!roll7.equals(await shot(page, "seed-8")), "and no two seeds are the same roll");
+    // it reaches the other two objects as well
+    await pose(page, { ...flat, scene: 1, seed: 0 });
+    const nSeed0 = await shot(page, "seed-neuron-0");
+    await pose(page, { ...flat, scene: 1, seed: 5 });
+    say(!nSeed0.equals(await shot(page, "seed-neuron-5")), "and it re-rolls the neuron too");
+
+    // Time. P plays and pauses the field's own clock, and the clock can be put
+    // anywhere by hand.
+    await pose(page, { ...flat, morph: 1, mClock: 5.0 });
+    const tick = await page.evaluate(async () => {
+      const key = () => window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "p", code: "KeyP", bubbles: true }));
+      const wait = () => new Promise((d) => {
+        let n = 0; const t = () => (++n < 10 ? requestAnimationFrame(t) : d()); requestAnimationFrame(t);
+      });
+      const a = window.__state.mClock;
+      await wait();
+      const b = window.__state.mClock;          // running
+      key();
+      const playing = window.__state.morph;
+      await wait();
+      const c = window.__state.mClock;          // held
+      await wait();
+      const d = window.__state.mClock;
+      const held = document.getElementById("tTimeOut").textContent;
+      key();
+      await wait();
+      const e = window.__state.mClock;          // running again
+      return { a, b, c, d, e, playing, held,
+               reads: document.getElementById("tTimeOut").textContent };
+    });
+    say(tick.b > tick.a, `the field's clock runs while it is playing (${tick.a.toFixed(2)} -> ${tick.b.toFixed(2)})`);
+    say(!tick.playing && tick.d === tick.c, `and P holds it exactly still (${tick.c.toFixed(2)})`);
+    say(tick.e > tick.d, "and P again lets it go");
+    say(tick.held === tick.d.toFixed(2) + " s" && tick.reads === tick.e.toFixed(2) + " s",
+        `and the console shows the clock, held and running (${tick.held} / ${tick.reads})`);
 
     // The mirror. Off is the page as it was; on, the object is folded in half
     // about the plane and the half that is left is drawn on both sides.
@@ -1212,6 +1270,38 @@ const spin = await ui.evaluate(() => {
     say(shut === "false", "and Esc puts the gizmo away");
 
     await ui.close();
+  }
+
+  // ---- settings older than the controls they never mention ---------------
+  // A template or a saved default written before a control existed says
+  // nothing about it, and what it means is the page as it shipped — not
+  // whatever happens to be set at the moment. Everything from before walking
+  // was flying, so recalling one has to hand flight back.
+  if (mode === "check") {
+    const old = await browser.newPage({ viewport: { width: 900, height: 1100 } });
+    old.on("pageerror", (e) => { if (ours(String(e))) errors.push("legacy: " + e); });
+    // its own saved default, and no cloud copy allowed to outrank it
+    await old.route("**/firestore.googleapis.com/**", (r) => r.abort());
+    await old.addInitScript(() => {
+      localStorage.setItem("cortical.defaults.v2", JSON.stringify({
+        at: Date.now(),
+        data: { scene: 1, fly: 1, shadowDark: 0.11, flyPos: [0, 0, 3], flyYaw: 0, flyPitch: 0 },
+      }));
+    });
+    await old.goto(page_url);
+    await old.waitForTimeout(1400);
+    const back = await old.evaluate(() => {
+      const s = window.__state;
+      s.walkOn = 1; s.walkSize = 0.25; s.seed = 42; s.dofOn = 1;
+      document.getElementById("resetBtn").click();
+      return { walkOn: s.walkOn, fly: s.fly, size: s.walkSize, seed: s.seed,
+               dof: s.dofOn, dark: s.shadowDark };
+    });
+    say(back.dark === 0.11 && !!back.fly, "a setting saved before walking existed still loads");
+    say(!back.walkOn, "and comes back flying rather than walking");
+    say(back.size === 1 && back.seed === 0 && !back.dof,
+        "with everything it never mentioned as the page ships it");
+    await old.close();
   }
 
   if (errors.length) {
