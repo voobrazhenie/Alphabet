@@ -97,6 +97,13 @@ time a group is added: the last module of an open group can sit past the bottom
 of even a 1300-tall page. Scroll the thing being dragged into view first
 (`scrollIntoView({block:"center"})`) rather than trusting that it fits.
 
+A fifth, for anything that **slides, fades or eases**: this headless build
+starts CSS transitions and then never advances them. The computed value sits at
+the first frame for ever — `getAnimations()` reports nothing and no amount of
+waiting helps — so a rule the cascade really is applying looks as though it is
+not. Measure the resting state with the transition taken away
+(`el.style.transition = "none"`), not after a wait.
+
 Always check: all three objects still compile and render, and no page errors.
 
 Two traps live in the shader rather than in the test:

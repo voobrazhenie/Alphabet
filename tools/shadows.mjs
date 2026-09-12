@@ -57,6 +57,8 @@ async function pose(page, over) {
     // cube rig turns build steps off and the warp down, and the next case along
     // then quietly compares a different object with the baseline.
     s.lcOn = [1, 1, 1, 1, 1, 0]; s.warpOn = [1, 0, 0]; s.warpAmt = 0.74;
+    s.eps = 12.00; s.omega = 1.30; s.bound = 2; s.boundPad = 0.05;
+    s.lcRelief = 0.26; s.lcFreq = 4.00; s.lcThick = 0.022; s.lcTwirl = 1.90;
     // The film grain has a control now and it is off by default. The stored
     // baselines were taken before it existed, so the pose turns it back on:
     // that keeps "the sun switched off is the page as it was" a live claim
@@ -531,6 +533,42 @@ const run = async () => {
     const small = await page.evaluate(() => ({ y: window.__state.flyPos[1], on: window.__walk.onGround }));
     say(small.on && small.y > 0 && small.y < landed.y * 0.35,
         `a smaller controller stands lower on the same ground (${landed.y.toFixed(3)} -> ${small.y.toFixed(3)})`);
+
+    // Standing still is exactly still. The ray starts at the eye, so the answer
+    // depends on where the eye is, and correcting the eye by it moves the next
+    // ray: chasing it never converges. This spot used to sit in a two-frame
+    // cycle a millimetre and a half wide, for ever.
+    await pose(page, { scene: 2, shadowOn: 0, fly: 1, walkOn: 1, lookSmooth: 0, moveSmooth: 0,
+                       flyPos: [-0.75, 1.4, -0.50], flyYaw: 0, flyPitch: 0,
+                       warpOn: [1, 0, 0], warpAmt: 0.79, eps: 5.2, omega: 1.68,
+                       bound: 0, boundPad: 0.6, lcRelief: 0.28, lcFreq: 5,
+                       lcThick: 0.052, lcTwirl: 2.1, lcOn: [1, 1, 1, 1, 1, 0] });
+    for (let i = 0; i < 14; i++) await frames();
+    const held = await page.evaluate(() => new Promise((done) => {
+      const ys = []; let n = 0;
+      const t = () => { ys.push(window.__state.flyPos[1]);
+        if (++n < 30) requestAnimationFrame(t); else done(ys); };
+      requestAnimationFrame(t);
+    }));
+    const swing = Math.max(...held) - Math.min(...held);
+    say(swing === 0, `a walker standing still does not drift or shiver (${swing.toExponential(1)})`);
+
+    // Every shortcut is read by where the key is, not by what it prints: on a
+    // Russian layout P prints з, and the page has to take it just the same.
+    const foreign = await page.evaluate(() => {
+      const was = window.__state.morph;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "\u0437", code: "KeyP", bubbles: true }));
+      const flipped = window.__state.morph !== was;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "\u0437", code: "KeyP", bubbles: true }));
+      // and the fly keys, which are held rather than pressed
+      window.__state.fly = 1;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "\u0446", code: "KeyW", bubbles: true }));
+      const walking = !!window.__held.w;
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "\u0446", code: "KeyW", bubbles: true }));
+      return { flipped, walking, let_go: !window.__held.w, back: window.__state.morph === was };
+    });
+    say(foreign.flipped && foreign.back, "a key on another layout still plays and pauses the clock");
+    say(foreign.walking && foreign.let_go, "and still drives the walk, down and up again");
 
     // The seed. Zero is the roll every baseline was shot at, and the picture is
     // that one to the byte; any other seed is another object of the same kind.
@@ -1268,6 +1306,88 @@ const spin = await ui.evaluate(() => {
       return document.getElementById("dmEdit").getAttribute("aria-pressed");
     });
     say(shut === "false", "and Esc puts the gizmo away");
+
+    // ---- T, and the console that comes down from the top ----------------
+    const tkey = await ui.evaluate(() => {
+      // hide the panels first, so T has to bring them back as well
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "h", code: "KeyH", bubbles: true }));
+      const away = document.getElementById("hud").classList.contains("hidden");
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "t", code: "KeyT", bubbles: true }));
+      const open = Array.prototype.filter.call(document.querySelectorAll(".grpt"),
+        (h) => h.getAttribute("aria-expanded") === "true").map((h) => +h.dataset.grp);
+      return { away, back: !document.getElementById("hud").classList.contains("hidden"), open };
+    });
+    say(tkey.away && tkey.back, "T brings the menu back when the panels are away");
+    say(tkey.open.length === 1 && tkey.open[0] === 8,
+        `and leaves only Templates open (${tkey.open.join(",") || "none"})`);
+
+    const term = await ui.evaluate(async () => {
+      const key = (code, shift) => window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "`", code, shiftKey: !!shift, bubbles: true }));
+      const el = document.getElementById("term");
+      key("Backquote");
+      const opened = el.classList.contains("on");
+      const focused = document.activeElement === document.getElementById("termIn");
+      // It slides down on a CSS transition, and this headless build starts
+      // transitions without ever advancing them: the computed transform sits
+      // at the first frame for ever. So take the transition away and measure
+      // where it actually comes to rest.
+      el.style.transition = "none";
+      void el.offsetWidth;
+      const r = el.getBoundingClientRect();
+      const m = document.querySelector(".console").getBoundingClientRect();
+      el.style.transition = "";
+      return { opened, focused, left: Math.round(r.left), top: Math.round(r.top),
+               gap: Math.round(m.left - r.right) };
+    });
+    say(term.opened && term.focused, "the ` key brings the console down, ready to type in");
+    say(term.left === 0 && term.top === 0, "from the top left corner");
+    say(term.gap === 0, `and across to the menu's edge, exactly (${term.gap}px over)`);
+
+    const cmd = await ui.evaluate(async () => {
+      const type = (text) => {
+        const inp = document.getElementById("termIn");
+        inp.value = text;
+        inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+      };
+      window.__state.glow = 1;
+      type("set glow 3");
+      const set = window.__state.glow;
+      type("get glow");
+      type("nonsense");
+      const lines = document.getElementById("termLog").textContent;
+      const before = document.querySelectorAll("#termLog > div").length;
+      type("clear");
+      return { set, lines, before, after: document.querySelectorAll("#termLog > div").length };
+    });
+    say(cmd.set === 3, `set changes a setting by name (glow ${cmd.set})`);
+    say(/glow = 3/.test(cmd.lines), "get reads it back");
+    say(/do not know/.test(cmd.lines), "and it says so when it does not know a word");
+    say(cmd.before > 3 && cmd.after === 0, "clear empties the log");
+
+    // a notice the page gives is written down as well
+    const noted = await ui.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "1", code: "Digit1", altKey: true, bubbles: true }));
+      return document.getElementById("termLog").textContent;
+    });
+    say(/Night/.test(noted), "and every notice the page gives lands in it");
+
+    const shutTerm = await ui.evaluate(() => {
+      const inp = document.getElementById("termIn");
+      inp.value = "";
+      inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      return document.getElementById("term").classList.contains("on");
+    });
+    say(!shutTerm, "and Esc puts it away again");
+
+    // The menu's width is one value for the page, not one per template.
+    const oneWidth = await ui.evaluate(() => {
+      window.__state.uiWidth = 300;
+      document.documentElement.style.setProperty("--menu-w", "300px");
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "1", code: "Digit1", altKey: true, bubbles: true }));
+      return window.__state.uiWidth;
+    });
+    say(oneWidth === 300, `a template leaves the menu's width alone (${oneWidth})`);
 
     await ui.close();
   }

@@ -122,6 +122,8 @@ colour, which is what makes the left column scannable.
 | **Templates** | whole settings under a name. See §23 |
 | Footer | Benchmark, Save as default / Reset, and two status lines |
 
+The console (§33) is not one of the groups: it is a window of its own, on `` ` ``.
+
 Controls that belong to one object only are shown only for that object. Which
 groups are open is remembered, and **`M` folds them all away** — or brings them
 all back if they are already away. The console is the one panel that scrolls,
@@ -129,6 +131,14 @@ with a styled vertical scrollbar and no horizontal one.
 
 **None of that arrangement is fixed.** Groups and modules can be reordered,
 moved between groups and renamed; see §22.
+
+**`T` is the shortcut to the one group most often wanted on its own**: it brings
+the menu back if the panels are away, folds every group, and opens **Templates**.
+
+**How wide the menu is is one value for the whole page.** It is part of a saved
+default, but it is *not* part of a template and a fader never touches it:
+picking a different look must not resize the interface under your hand. The
+console window (§33) reaches exactly to whatever that width leaves.
 
 ## 6. Rendering controls
 
@@ -311,6 +321,8 @@ browser's, given the same object and settings.
 | `G` | Show the depth decal's gizmo, or put it away |
 | `*` | Stand where the sun does, and come back |
 | `M` | Fold every group away, or open them all |
+| `T` | The menu, with nothing open but Templates |
+| `` ` `` | The console, down from the top and away again |
 | `shift+M` | Morph |
 | `P` | Play and pause the field's clock |
 | `I` | Impulses |
@@ -327,6 +339,11 @@ browser's, given the same object and settings.
 | `alt`+`1`–`0` | Recall a template |
 | `W A S D Q E`, `shift` | Fly (only while flying); walking drops `Q` `E` |
 | `Esc` | Close or stop the benchmark |
+
+**Every key is read by where it sits on the keyboard**, not by the letter its
+layout prints. On a Russian layout `W` prints ц and `P` prints з; the page takes
+both exactly as it takes `W` and `P`, in any language the system is set to.
+`shift+8` and the numpad's `*` are both the sun's own view, for the same reason.
 
 Keys are ignored while a text input has focus, and while a name is being typed
 into. `W A S D Q E` belong to fly mode while it is on, so `A` does not also cycle
@@ -1080,9 +1097,16 @@ drawn with**, and read back. What the walker stands on is therefore exactly the
 surface that is on screen — warps, folds, blend-to-sphere, mirror and depth
 decal included. The answer comes back as a distance in two bytes rather than
 one: quantised to 1/255 of the scene, a walker standing still visibly shivers.
-Even then, a walker already standing ignores a floor that has moved by no more
-than the answer is grainy — so standing still is **exactly** still, to the last
-decimal, rather than a slow tremble.
+**Standing still is exactly still**, to the last decimal — and that takes more
+than rounding off the graininess. Chasing the answer does not converge: the ray
+starts at the eye, so the distance it returns depends on where the eye is, and
+correcting the eye by that distance moves the start of the next ray, which
+returns a slightly different distance, which moves it back. Left alone it sits
+in a two-frame cycle a millimetre or two wide, for ever. So a walker that is
+already standing, not moving and not rising holds its height unless the floor
+has moved by more than **a few percent of the walker's own height** — far below
+anything an eye can see, and it scales when the walker does. A walk *over* the
+ground keeps the tight tolerance instead, or it would climb a slope in steps.
 
 **Where there is nothing below, there is nothing to stand on.** The chrome
 object in its default *intersect* mode is islands with real gaps between them —
@@ -1194,3 +1218,41 @@ addition per sample instead of one per hash — a noise lookup takes eight hashe
 — and it means two seeds never land on the same lattice. The seed is saved with
 a template, and crossing between two templates **flips** it at the half-way
 mark rather than sliding through every roll in between.
+
+---
+
+## 33. The console
+
+A window that comes **down from the top** on `` ` `` and goes back up on `` ` ``
+or `Esc`. It runs from the left edge of the window **across to the menu's edge,
+exactly** — and with the panels hidden (`H`), across the lot. It is not part of
+the HUD: hiding the panels leaves it wherever it was.
+
+`shift+`` ` `` is still Fly mode. The plain key is the console.
+
+**It writes down everything the page says out loud.** Every notice that flashes
+under the menu and is gone in a second and a half is kept here with the second
+it happened at, along with any fault the page throws. That is the point of it:
+a notice you missed is not a notice.
+
+**It takes commands.** The field it opens with the focus in takes:
+
+| | |
+| --- | --- |
+| `help` | the list |
+| `get <name>` | what a setting is now |
+| `set <name> <value>` | change one |
+| `find <text>` | every setting whose name has that in it |
+| `keys` | what the keyboard does |
+| `clear` | empty the log |
+
+A name is any setting that a saved default holds — the same list a template is
+made of — so anything in the menu can be reached by name, and so can a few
+things that are not in it. A value is a number, `on` / `off`, a colour, or a
+JSON array for the ones that are lists (`set warpOn [1,0,1]`). A value typed
+here goes in **through the same controls a hand would use**, so the menu, the
+readings and the pressed states all follow. A name that does not exist comes
+back with the closest ones that do.
+
+The up and down arrows walk back through what has been typed. The log keeps the
+last 400 lines.
