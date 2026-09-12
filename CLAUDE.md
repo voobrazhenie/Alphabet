@@ -50,6 +50,11 @@ update it in the same commit when behaviour changes.
   Say so rather than quoting numbers. The native app *can* be run headless on
   software Vulkan to check the console renders — `pc/NOTES.md` has the recipe — but
   only in a debug build, and never for speed.
+- **The chrome object has holes in it.** Its default *intersect* mode keeps only
+  where the displaced slab and the plain one overlap, so straight down from the
+  origin there is often no solid at all. A ground probe that reports nothing
+  there is right; a test that needs ground under the camera has to union the two
+  slabs (`lcOn[3] = 0`) or stand somewhere else.
 - **No MIDI hardware here** — the mapping arithmetic is unit tested, the device
   layer cannot be. It is Windows-only code and the container has no controller.
 

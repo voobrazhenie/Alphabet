@@ -70,7 +70,12 @@ async function pose(page, over) {
     s.depthSize = [0.80, 0.80]; s.depthPart = [0, 0, 0];
     s.mirror = [0, 0]; s.shift = 0;
     s.spriteOn = 0; s.sprite = 0; s.spriteSize = 0.20; s.spriteFrames = 4; s.spriteFps = 6;
-    s.ball = 0;
+    s.ball = 0;   // NOT s.fov: this page is narrow enough that the page calls it
+                  // a phone and picks a wider lens, and every baseline was shot
+                  // through that one
+    s.dofOn = 0; s.dofFocus = 3.0; s.dofRange = 0.8; s.dofBlur = 4.0;
+    s.walkOn = 0; s.walkSpeed = 0.45; s.jumpHeight = 0.22;
+    s.jumpOn = 1; s.runOn = 1; s.stepsOn = 0;
     s.flyMin = 0.030; s.flyMax = 12.0; s.lookSmooth = 0; s.moveSmooth = 0;
     Object.assign(s, o);
   }, over);
@@ -434,6 +439,27 @@ const run = async () => {
     const d = darkened(clearAir, thickAir, 6);
     say(d > 0.03, `and thickening it takes the distance away (${(d * 100).toFixed(1)}% of the frame)`);
 
+    // The lens. Off is the page as it was — the blur is carried in the alpha
+    // channel, which nothing was reading, so switching it on is invisible until
+    // the post pass is told to look.
+    await pose(page, { ...flat, dofOn: 0 });
+    if (off) say((await shot(page, "dof-off")).equals(off),
+                 "depth of field switched off is byte-identical to the baseline");
+    await pose(page, { ...flat, dofOn: 1, dofFocus: 1.0, dofRange: 0.2, dofBlur: 8 });
+    const soft = await shot(page, "dof-near");
+    say(off && !soft.equals(off), "and switched on it softens what is out of the band");
+    await pose(page, { ...flat, dofOn: 1, dofFocus: 1.0, dofRange: 0.2, dofBlur: 0 });
+    if (off) say((await shot(page, "dof-noblur")).equals(off),
+                 "no blur at all is the sharp frame again, to the byte");
+    // The lens is the one thing the pose deliberately leaves alone — every
+    // baseline was shot through whatever lens this narrow window picked on
+    // load — so put it back afterwards, or every case from here on is framed
+    // through a different one and none of them matches its baseline.
+    const lens = await page.evaluate(() => window.__state.fov);
+    await pose(page, { ...flat, fov: 2.2 });
+    say(off && !(await shot(page, "fov-long")).equals(off), "and the lens changes what it takes in");
+    await pose(page, { ...flat, fov: lens });
+
     // Travelling from the object toward a plain ball. At nothing it is the page
     // as it was; all the way it is a ball, whichever object it started from.
     await pose(page, { ...flat, ball: 0 });
@@ -463,6 +489,37 @@ const run = async () => {
     await pose(page, { ...flat, scene: 0, ball: 1.0 });
     say(!ballC.equals(await shot(page, "ball-brain")),
         "each object arrives at a ball of its own size");
+
+    // Walking: put the camera in the air over the chrome and let go of it. The
+    // ground it lands on comes back from the shader, one ray at a time.
+    // The two slabs are unioned rather than intersected for this one: the
+    // default intersects them, and where the height field lifts one clear of
+    // the other there is no solid at all — including the column straight down
+    // from the origin, which is where this drops the camera.
+    await pose(page, { scene: 2, shadowOn: 0, fly: 1, walkOn: 1, lookSmooth: 0, moveSmooth: 0,
+                       flyPos: [0, 3, 0], flyYaw: Math.PI, flyPitch: 0,
+                       warpOn: [0, 0, 0], warpAmt: 0, lcOn: [1, 1, 1, 0, 1, 0] });
+    const frames = () => page.evaluate(() => new Promise((d) => {
+      let n = 0; const t = () => (++n < 12 ? requestAnimationFrame(t) : d()); requestAnimationFrame(t);
+    }));
+    // A fall of three units under this gravity is a bit over a second, and a
+    // frame here is worth about 20 ms of it, so give it enough of them to land.
+    for (let i = 0; i < 10; i++) await frames();
+    const landed = await page.evaluate(() => ({ y: window.__state.flyPos[1], w: window.__walk }));
+    await frames();
+    const still = await page.evaluate(() => window.__state.flyPos[1]);
+    say(landed.w.ground >= 0, `the shader reports what is underfoot (${landed.w.ground.toFixed(3)})`);
+    say(landed.y < 1.0 && landed.y > -0.2, `and gravity brings the camera down onto it (3.0 -> ${landed.y.toFixed(3)})`);
+    say(landed.w.onGround && Math.abs(still - landed.y) < 1e-6, "and it stays there rather than sinking through");
+    // a jump leaves the ground and comes back
+    await page.evaluate(() => window.dispatchEvent(
+      new KeyboardEvent("keydown", { code: "Space", key: " ", bubbles: true })));
+    const up = await page.evaluate(() => ({ vy: window.__walk.vy, y: window.__state.flyPos[1] }));
+    say(up.vy > 0, `space lifts it off the ground (${up.vy.toFixed(2)} up)`);
+    await frames(); await frames(); await frames(); await frames();
+    const down = await page.evaluate(() => ({ y: window.__state.flyPos[1], on: window.__walk.onGround }));
+    say(down.on && Math.abs(down.y - landed.y) < 0.02,
+        `and it comes back down to the same ground (${down.y.toFixed(3)})`);
 
     // The mirror. Off is the page as it was; on, the object is folded in half
     // about the plane and the half that is left is drawn on both sides.

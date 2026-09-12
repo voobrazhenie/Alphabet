@@ -47,6 +47,7 @@ steers relative to the path; the wheel or a pinch changes range.
 **Fly** is free navigation, Blender-style:
 
 - `W A S D` move, `Q` `E` down and up in world coordinates, `shift` sprints.
+- `Tab` puts the camera on the ground and takes it off again. See §30.
 - Right-drag looks; pitch stops just short of the poles.
 - The wheel (or a pinch) sets speed, between the two limits in the **Camera**
   group. The floor reaches down to a thousandth of a unit a second on the
@@ -65,6 +66,9 @@ space, and stays close enough that the object overruns the frame.
 | **Fastest** | 0.5-60, or typed up to 400 | 12.0 |
 | **Look smoothing** | 0-1 | 0.00 |
 | **Move smoothing** | 0-1 | 0.00 |
+
+The same group also carries walking (§30), and the lens and depth of field
+(§31).
 
 The two limits are what the wheel may wind the speed down and up to; `shift`
 still sprints past the ceiling. Moving a limit past where the speed currently
@@ -104,7 +108,7 @@ colour, which is what makes the left column scannable.
 | Group | What it holds |
 | --- | --- |
 | **Construction** | Object, Navigation, Flight path |
-| **Camera** | how slow and how fast flight goes, and how much it lags the hand. See §3 |
+| **Camera** | how slow and how fast flight goes, and how much it lags the hand (§3); walking, jumping and step sounds (§30); the lens and depth of field (§31) |
 | **Object modifications** | the chrome build steps and their sliders, **Blend to sphere**, ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
 | **Rendering** | Resolution, Antialias, Frame rate |
 | **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
@@ -295,10 +299,12 @@ browser's, given the same object and settings.
 | `F` | Full screen |
 | `H` or `U` | Hide the panels |
 | `` shift+` `` | Fly mode |
+| `Tab` | Walking, on and off (only while flying) |
+| `space` | Jump (only while walking) |
 | `5`–`0` | Recall a viewpoint |
 | `shift`+`5`–`0` | Store a viewpoint |
 | `alt`+`1`–`0` | Recall a template |
-| `W A S D Q E`, `shift` | Fly (only while flying) |
+| `W A S D Q E`, `shift` | Fly (only while flying); walking drops `Q` `E` |
 | `Esc` | Close or stop the benchmark |
 
 Keys are ignored while a text input has focus, and while a name is being typed
@@ -927,6 +933,7 @@ So the fragment shader is assembled per draw from what is actually on:
 | **Transparency** off | the refraction loop, and the two marches it runs inside and outside the body |
 | **Depth map** off | the beam, its bounding box, and every hook it has in an object's field |
 | **Test cube** off | the cube, and the bound it widens |
+| **Walking** off | the ground probe and the ray it marches (§30) |
 
 Objects were already separate this way — each program carries **one** object's
 field, so nothing about the brain is compiled while the neuron is on screen.
@@ -939,7 +946,8 @@ producing the same frame to the byte.
 
 Two things stayed runtime checks because leaving them out would not pay for a
 variant of its own: **Noise** at zero skips its hash, and **Haze** and **Glow**
-are one multiply each.
+are one multiply each. The post pass is one program either way, and reads
+**Depth of field** as a switch: off, it does not gather.
 
 ---
 
@@ -1022,3 +1030,111 @@ somewhere different. The bounding volume grows to hold it when the slider is
 off nothing — the chrome slab's own box is a fraction of a unit thick, and
 anything outside the bounds is never marched at all, so without that the ball
 would come out sliced flat.
+
+---
+
+## 30. Walking
+
+Fly mode can put its feet on the ground. `Tab` while flying switches walking on
+and off — the way Blender does — and so does the **Walking** button in the
+Camera group.
+
+Walking takes over the up-and-down axis and nothing else. Looking, the two
+smoothing sliders, `R`, the saved viewpoints and the templates all behave
+exactly as they do in flight.
+
+- `W A S D` move over the ground. Forward is flattened to the horizon, so
+  looking up does not climb.
+- `Q` and `E` no longer lift or lower. Gravity owns the height.
+- `shift` breaks into a run — about two and a half times the walk — while
+  **Run** is on.
+- `space` jumps, while **Jump** is on and both feet are down.
+- Leaving walking hands the camera straight back to free flight, wherever it is.
+
+**The ground comes from the shader.** The field is only known inside the
+program that draws it, so the walker asks the question the only way there is to
+ask it: one ray, straight down from the eye, rendered into a framebuffer one
+pixel wide with **the same program and the same uniforms the frame was just
+drawn with**, and read back. What the walker stands on is therefore exactly the
+surface that is on screen — warps, folds, blend-to-sphere, mirror and depth
+decal included. The answer comes back as a distance in two bytes rather than
+one: quantised to 1/255 of the scene, a walker standing still visibly shivers.
+Even then, a walker already standing ignores a floor that has moved by no more
+than the answer is grainy — so standing still is **exactly** still, to the last
+decimal, rather than a slow tremble.
+
+**Where there is nothing below, there is nothing to stand on.** The chrome
+object in its default *intersect* mode is islands with real gaps between them —
+the two slabs only overlap where the height field is shallow — so a walker can
+step off the edge of the world. It falls, and once it is further below the
+object than the object is wide it is put back above it rather than falling for
+ever.
+
+**The Camera group gains:**
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Walking** | on / off | off |
+| **Jump** | on / off | on |
+| **Run** | on / off | on |
+| **Steps** | on / off | off |
+| **Add** (step sample) | a file from this computer | none |
+| **Walk speed** | 0.03-4.00, or typed | 0.45 |
+| **Jump height** | 0.01-2.00, or typed | 0.22 |
+
+**Jump height is the height**, not an impulse: gravity is worked back out of the
+number so that a jump of 0.22 rises 0.22 and lands again, whatever else is set.
+
+**Steps** plays a sound each time a foot lands. The interval is a distance
+walked, not a clock, so running steps come faster on their own and standing
+still makes no sound at all; landing from a jump makes one. **Add** loads a
+sample from the computer and it is used until the page is closed — it is not
+saved into a template or the default. Without one the page synthesises a plain
+low thud.
+
+---
+
+## 31. The lens, and depth of field
+
+**Field of view** is in the Camera group.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Field of view** | 100°-8°, or typed in degrees | 42° |
+
+The reading is the vertical angle the frame takes in, and a number typed into it
+is read as degrees. The slider runs the other way round — wide angle on the
+left, long lens on the right — because that is the direction the picture opens
+out in. A narrow window still picks a wider lens of its own on first load; the
+control simply starts wherever that left it.
+
+**Depth of field** is the rest of the group.
+
+| Control | Range | Default |
+| --- | --- | --- |
+| **Depth of field** | on / off | off |
+| **Focus distance** | 0.10-12.00, or typed | 3.00 |
+| **Focus depth** | 0.05-6.00, or typed | 0.80 |
+| **Blur** | 0.0-40.0 pixels | 4.0 |
+
+Three controls, in the shape that was asked for and that a camera actually has:
+a surface that is sharp, a band around it that is also sharp, and how soft
+everything beyond that band gets. **Focus depth** is the half-width of the band
+— the same amount in front of the focus surface and behind it — and the blur
+then comes on over a second band of the same width, so nothing snaps from sharp
+to soft at an edge. Past that it is fully blurred and gets no worse; a real lens
+keeps going, but a circle of confusion that grows without limit costs more every
+frame to draw the further away the background is.
+
+**How it is done.** The march already knows how far it went, so each pixel
+writes its own circle of confusion into the alpha channel of the frame — the
+drawing buffer has no alpha of its own, so nothing else was ever going to read
+it — and the post pass gathers thirteen taps on a golden-angle spiral, weighted
+by that same number so a sharp foreground cannot bleed outward over a blurred
+background. Background pixels, which never hit anything, take the value the
+distance fade ends at.
+
+**Off is exact.** With **Depth of field** off, the shader writes 1.0 and the
+post pass does not gather at all: the frame is byte-identical to the frame
+before this existed. **Blur** at zero is the same frame again, with the switch
+on.

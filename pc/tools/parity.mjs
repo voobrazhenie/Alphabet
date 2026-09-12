@@ -201,6 +201,7 @@ const renderPair = async ([webSrc, portSrc, u, W, H]) => {
       set("uGlow", "uniform1f", 1.0);
       set("uMirror", "uniform2f", 0.0, 0.0);   // the port has no mirror; unfolded is zero
       set("uBall", "uniform1f", 0.0);          // nor the blend to a ball; none of it is zero
+      set("uDofOn", "uniform1f", 0.0);         // nor a lens; everything is in focus
       set("uBoundPad", "uniform1f", u.boundPad);
       set("uWarpMode", "uniform1f", u.warpMode);
       const web = draw();
