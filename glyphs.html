@@ -48,33 +48,33 @@ button{width:100%;margin-top:10px;padding:11px;border:1px solid #56632f;backgrou
 
 <div class="layout">
 <aside class="panel controls">
-<label for="letter">Letter seed</label>
-<input id="letter" type="text" value="A" maxlength="1" autocapitalize="characters">
+<label for="ctlLetter">Letter seed</label>
+<input id="ctlLetter" type="text" value="A" maxlength="1" autocapitalize="characters">
 
 <label>Number of strokes <span id="strokesV"></span></label>
-<input id="strokes" type="range" min="1" max="9" value="5">
+<input id="ctlStrokes" type="range" min="1" max="9" value="5">
 
 <label>Stroke length <span id="lengthV"></span></label>
-<input id="length" type="range" min="20" max="72" value="47">
+<input id="ctlLength" type="range" min="20" max="72" value="47">
 
 <label>Stroke width <span id="widthV"></span></label>
-<input id="width" type="range" min="3" max="18" value="10">
+<input id="ctlWidth" type="range" min="3" max="18" value="10">
 
 <label>Wedge / triangularity <span id="wedgeV"></span></label>
-<input id="wedge" type="range" min="0" max="100" value="82">
+<input id="ctlWedge" type="range" min="0" max="100" value="82">
 
 <label>Texture / erosion <span id="textureV"></span></label>
-<input id="texture" type="range" min="0" max="100" value="38">
+<input id="ctlTexture" type="range" min="0" max="100" value="38">
 
-<div class="check"><input id="showGrid" type="checkbox"><label for="showGrid" style="margin:0">show nine-hole grid</label></div>
+<div class="check"><input id="ctlShowGrid" type="checkbox"><label for="ctlShowGrid" style="margin:0">show nine-hole grid</label></div>
 
-<div class="big" id="big"></div>
-<button id="reset">Reset instrument</button>
+<div class="big" id="bigGlyph"></div>
+<button id="ctlReset">Reset instrument</button>
 <div class="note">The nine grid positions are fixed. A letter seed determines which holes are used, stroke direction, rotation bias, length variation and surface scars. Changing the sliders preserves that structural identity.</div>
 </aside>
 
 <main>
-<div class="grid" id="grid"></div>
+<div class="grid" id="alphabetGrid"></div>
 </main>
 </div>
 </div>
@@ -91,14 +91,26 @@ const dirs=[
  [-1,0],[-.707,-.707],[0,-1],[.707,-.707]
 ];
 
+const controls={
+  letter:document.getElementById("ctlLetter"),
+  strokes:document.getElementById("ctlStrokes"),
+  length:document.getElementById("ctlLength"),
+  width:document.getElementById("ctlWidth"),
+  wedge:document.getElementById("ctlWedge"),
+  texture:document.getElementById("ctlTexture"),
+  showGrid:document.getElementById("ctlShowGrid"),
+  reset:document.getElementById("ctlReset"),
+  big:document.getElementById("bigGlyph"),
+  grid:document.getElementById("alphabetGrid")
+};
 const ids=["strokes","length","width","wedge","texture"];
 const state=()=>({
- strokes:+strokes.value,
- length:+length.value,
- width:+width.value,
- wedge:+wedge.value/100,
- texture:+texture.value/100,
- showGrid:showGrid.checked
+ strokes:+controls.strokes.value,
+ length:+controls.length.value,
+ width:+controls.width.value,
+ wedge:+controls.wedge.value/100,
+ texture:+controls.texture.value/100,
+ showGrid:controls.showGrid.checked
 });
 
 function hash(str){
@@ -208,37 +220,38 @@ function svgFor(letter,s,slot){
  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${mask}${grid}<g ${s.texture>.001?`mask="url(#${uid})"`:""}>${shapes}</g></svg>`;
 }
 function normalizeLetter(){
- let L=(letter.value||"A").toUpperCase().replace(/[^A-Z]/g,"")[0]||"A";
- letter.value=L;return L;
+ let L=(controls.letter.value||"A").toUpperCase().replace(/[^A-Z]/g,"")[0]||"A";
+ controls.letter.value=L;return L;
 }
 function updateLabels(){
- strokesV.textContent=strokes.value;
- lengthV.textContent=length.value;
- widthV.textContent=width.value;
- wedgeV.textContent=wedge.value+"%";
- textureV.textContent=texture.value+"%";
+ document.getElementById("strokesV").textContent=controls.strokes.value;
+ document.getElementById("lengthV").textContent=controls.length.value;
+ document.getElementById("widthV").textContent=controls.width.value;
+ document.getElementById("wedgeV").textContent=controls.wedge.value+"%";
+ document.getElementById("textureV").textContent=controls.texture.value+"%";
 }
 function render(){
  renderSerial++;
  updateLabels();
  const s=state(),current=normalizeLetter();
- big.innerHTML=svgFor(current,s,"big");
- grid.innerHTML="";
+ controls.big.innerHTML=svgFor(current,s,"big");
+ controls.grid.innerHTML="";
  alphabet.forEach((L,i)=>{
    const plan=letterPlan(L);
    const el=document.createElement("div");
    el.className="card"+(L===current?" active":"");
    el.innerHTML=`<div class="glyph">${svgFor(L,s,i)}</div><div class="cap"><span class="letter">${L}</span><span class="seed">${plan.seed}</span></div>`;
-   el.onclick=()=>{letter.value=L;render()};
-   grid.appendChild(el);
+   el.onclick=()=>{controls.letter.value=L;render()};
+   controls.grid.appendChild(el);
  });
 }
-letter.addEventListener("input",render);
-ids.forEach(id=>document.getElementById(id).addEventListener("input",render));
-showGrid.addEventListener("change",render);
-reset.onclick=()=>{
- strokes.value=5;length.value=47;width.value=10;wedge.value=82;texture.value=38;showGrid.checked=false;render();
+controls.letter.addEventListener("input",render);
+ids.forEach(id=>controls[id].addEventListener("input",render));
+controls.showGrid.addEventListener("change",render);
+controls.reset.onclick=()=>{
+ controls.strokes.value=5;controls.length.value=47;controls.width.value=10;controls.wedge.value=82;controls.texture.value=38;controls.showGrid.checked=false;render();
 };
+console.assert(Number.isFinite(state().length), "Stroke length control failed to initialize");
 render();
 </script>
 </body>
