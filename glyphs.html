@@ -3,50 +3,74 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Nine-Hole Alphabet Generator</title>
+<title>Nine-Hole Scribe Alphabet Study</title>
 <style>
-:root{--bg:#0b0b0c;--panel:#151517;--ink:#f1efe8;--muted:#96938b;--line:#303036;--accent:#d8ff65}
+:root{--bg:#0a0a0b;--panel:#141416;--ink:#efece3;--muted:#918e86;--line:#303034;--accent:#d5f56c}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.wrap{max-width:1200px;margin:auto;padding:18px}
-h1{font-size:clamp(2rem,10vw,4rem);margin:10px 0 8px;line-height:.95}
-p{color:#c7c4bc;line-height:1.45}
-.layout{display:grid;grid-template-columns:300px 1fr;gap:16px}
+.wrap{max-width:1320px;margin:auto;padding:18px 18px 48px}
+header{margin:8px 0 22px}
+h1{font-size:clamp(2.1rem,8vw,4.8rem);line-height:.92;letter-spacing:-.045em;margin:0 0 10px}
+header p{max-width:820px;color:#c4c0b7;line-height:1.5;margin:0}
+.layout{display:grid;grid-template-columns:310px 1fr;gap:18px;align-items:start}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px}
-.glyph{aspect-ratio:1;background:#080809;border-radius:9px;display:grid;place-items:center}
-.glyph svg{width:90%;height:90%}
-.cap{display:flex;justify-content:space-between;margin-top:7px;font-size:.8rem}
-.seed{color:var(--muted);font-size:.62rem}
-input[type=text]{width:100%;padding:12px;background:#0d0d0f;color:var(--ink);border:1px solid var(--line);border-radius:9px;font-size:1rem}
-input[type=range]{width:100%}
-label{display:block;margin:12px 0 4px;color:#bbb8b0;font-size:.82rem}
-.big{aspect-ratio:1;background:#080809;border-radius:12px;margin-top:14px;display:grid;place-items:center}
-.big svg{width:88%;height:88%}
-button{width:100%;margin-top:10px;padding:11px;border:1px solid #52632c;background:#1a1a1e;color:var(--accent);border-radius:9px}
-.note{font-size:.75rem;color:var(--muted);margin-top:10px}
-@media(max-width:760px){.layout{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{position:static}}
+.controls{position:sticky;top:14px}
+label{display:flex;justify-content:space-between;gap:8px;margin:12px 0 5px;font-size:.81rem;color:#bbb7ae}
+label span{color:var(--accent);font-variant-numeric:tabular-nums}
+input[type=text]{width:100%;padding:12px;background:#0c0c0e;color:var(--ink);border:1px solid var(--line);border-radius:9px;font-size:1.05rem}
+input[type=range]{width:100%;accent-color:#b8d957}
+.check{display:flex;align-items:center;justify-content:flex-start;gap:8px;margin-top:12px;color:#aaa69d;font-size:.8rem}
+.big{aspect-ratio:1;background:#080809;border:1px solid #252529;border-radius:11px;margin-top:14px;display:grid;place-items:center}
+.big svg{width:92%;height:92%}
+button{width:100%;margin-top:10px;padding:11px;border:1px solid #56632f;background:#1b1b1e;color:var(--accent);border-radius:9px;font:inherit;cursor:pointer}
+.note{font-size:.74rem;color:var(--muted);line-height:1.42;margin-top:11px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px;cursor:pointer}
+.card:hover,.card.active{border-color:#6c7c40}
+.glyph{aspect-ratio:1;background:#080809;border-radius:9px;display:grid;place-items:center;overflow:hidden}
+.glyph svg{width:94%;height:94%}
+.cap{display:flex;justify-content:space-between;align-items:center;margin-top:7px}
+.letter{font-weight:800}
+.seed{font-size:.6rem;color:var(--muted)}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 8px;margin-top:10px;color:#aaa69e;font-size:.68rem}
+@media(max-width:780px){
+ .layout{grid-template-columns:1fr}.controls{position:static}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>Nine-Hole Alphabet</h1>
-<p>Deterministic glyph prototype. Each A–Z letter always generates the same mark for the same style settings.</p>
+<header>
+<h1>Nine-Hole Scribe<br>Alphabet Study</h1>
+<p>A deterministic A–Z experiment built around nine fixed writing positions and independent wedge-like marks. Each letter chooses the same starting holes, directions and stroke variations every time; the sliders alter the shared writing instrument rather than rerolling the alphabet.</p>
+<span class="badge">prototype / not canon</span>
+</header>
 
 <div class="layout">
-<aside class="panel">
-<label>Letter</label>
-<input id="letter" type="text" value="A" maxlength="1" inputmode="text" autocapitalize="characters">
+<aside class="panel controls">
+<label for="letter">Letter seed</label>
+<input id="letter" type="text" value="A" maxlength="1" autocapitalize="characters">
 
-<label>Complexity</label><input id="complexity" type="range" min="2" max="8" value="5">
-<label>Curvature</label><input id="curvature" type="range" min="0" max="100" value="42">
-<label>Jitter</label><input id="jitter" type="range" min="0" max="28" value="7">
-<label>Stroke weight</label><input id="weight" type="range" min="1" max="8" value="3">
+<label>Number of strokes <span id="strokesV"></span></label>
+<input id="strokes" type="range" min="1" max="9" value="5">
+
+<label>Stroke length <span id="lengthV"></span></label>
+<input id="length" type="range" min="20" max="72" value="47">
+
+<label>Stroke width <span id="widthV"></span></label>
+<input id="width" type="range" min="3" max="18" value="10">
+
+<label>Wedge / triangularity <span id="wedgeV"></span></label>
+<input id="wedge" type="range" min="0" max="100" value="82">
+
+<label>Texture / erosion <span id="textureV"></span></label>
+<input id="texture" type="range" min="0" max="100" value="38">
+
+<div class="check"><input id="showGrid" type="checkbox"><label for="showGrid" style="margin:0">show nine-hole grid</label></div>
 
 <div class="big" id="big"></div>
-<button id="reset">Reset style</button>
-<div class="note">Tip on iPhone: open this file in Safari rather than the in-app file preview if interactive controls do not respond.</div>
+<button id="reset">Reset instrument</button>
+<div class="note">The nine grid positions are fixed. A letter seed determines which holes are used, stroke direction, rotation bias, length variation and surface scars. Changing the sliders preserves that structural identity.</div>
 </aside>
 
 <main>
@@ -56,54 +80,165 @@ button{width:100%;margin-top:10px;padding:11px;border:1px solid #52632c;backgrou
 </div>
 
 <script>
-const letters="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-const S=()=>({
- complexity:+document.getElementById("complexity").value,
- curvature:+document.getElementById("curvature").value,
- jitter:+document.getElementById("jitter").value,
- weight:+document.getElementById("weight").value
+const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const base=[
+ [22,22],[50,22],[78,22],
+ [22,50],[50,50],[78,50],
+ [22,78],[50,78],[78,78]
+];
+const dirs=[
+ [1,0],[.707,.707],[0,1],[-.707,.707],
+ [-1,0],[-.707,-.707],[0,-1],[.707,-.707]
+];
+
+const ids=["strokes","length","width","wedge","texture"];
+const state=()=>({
+ strokes:+strokes.value,
+ length:+length.value,
+ width:+width.value,
+ wedge:+wedge.value/100,
+ texture:+texture.value/100,
+ showGrid:showGrid.checked
 });
-function hash(s){let h=2166136261>>>0;for(const ch of s){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
-function rng(seed){return function(){let t=seed+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
-const base=[[22,22],[50,22],[78,22],[22,50],[50,50],[78,50],[22,78],[50,78],[78,78]];
-function glyph(letter,state){
- const seed=hash("ninehole:"+letter), r=rng(seed);
- const pts=base.map(([x,y])=>[x+(r()-.5)*state.jitter,y+(r()-.5)*state.jitter]);
- let ids=[0,1,2,3,4,5,6,7,8];
- for(let i=ids.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]]}
- ids=ids.slice(0,state.complexity);
- let d=`M ${pts[ids[0]][0]} ${pts[ids[0]][1]}`;
- for(let i=1;i<ids.length;i++){
-   const a=pts[ids[i-1]],b=pts[ids[i]];
-   if(state.curvature<8)d+=` L ${b[0]} ${b[1]}`;
-   else{
-    const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.max(1,Math.hypot(dx,dy));
-    const bend=(state.curvature/100)*10*(i%2?1:-1);
-    const mx=(a[0]+b[0])/2-dy/len*bend,my=(a[1]+b[1])/2+dx/len*bend;
-    d+=` Q ${mx} ${my} ${b[0]} ${b[1]}`;
+
+function hash(str){
+ let h=2166136261>>>0;
+ for(const c of str){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}
+ return h>>>0;
+}
+function prng(seed){
+ return function(){
+   let t=seed+=0x6D2B79F5;
+   t=Math.imul(t^t>>>15,t|1);
+   t^=t+Math.imul(t^t>>>7,t|61);
+   return((t^t>>>14)>>>0)/4294967296;
+ }
+}
+function letterPlan(letter){
+ const seed=hash("nine-holes-scribe:"+letter);
+ const r=prng(seed);
+ const marks=[];
+ for(let i=0;i<9;i++){
+   marks.push({
+     anchor:Math.floor(r()*9),
+     dir:Math.floor(r()*8),
+     turn:(r()-.5)*18,
+     len:.68+r()*.58,
+     width:.75+r()*.5,
+     blunt:.55+r()*.45,
+     notch:r()
+   });
+ }
+ return {seed,marks};
+}
+function rotate(vx,vy,deg){
+ const a=deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+ return [vx*c-vy*s,vx*s+vy*c];
+}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+
+function wedgePath(mark,s,r){
+ const [sx,sy]=base[mark.anchor];
+ let [dx,dy]=rotate(dirs[mark.dir][0],dirs[mark.dir][1],mark.turn);
+ const L=s.length*mark.len;
+ const W=s.width*mark.width;
+ const tipW=W*(1-s.wedge*.93);
+ const px=-dy,py=dx;
+
+ let ex=sx+dx*L,ey=sy+dy*L;
+ if(ex<7||ex>93||ey<7||ey>93){
+   dx=-dx;dy=-dy;
+   ex=sx+dx*L;ey=sy+dy*L;
+ }
+ ex=clamp(ex,6,94);ey=clamp(ey,6,94);
+
+ const edgeJ=s.texture*1.7;
+ const a1=[sx+px*W*.5+(r()-.5)*edgeJ, sy+py*W*.5+(r()-.5)*edgeJ];
+ const a2=[sx-px*W*.5+(r()-.5)*edgeJ, sy-py*W*.5+(r()-.5)*edgeJ];
+ const b1=[ex+px*tipW*.5+(r()-.5)*edgeJ, ey+py*tipW*.5+(r()-.5)*edgeJ];
+ const b2=[ex-px*tipW*.5+(r()-.5)*edgeJ, ey-py*tipW*.5+(r()-.5)*edgeJ];
+
+ const shoulder=.24+.22*mark.blunt;
+ const c1=[sx+dx*L*shoulder+px*W*.42,sy+dy*L*shoulder+py*W*.42];
+ const c2=[sx+dx*L*shoulder-px*W*.42,sy+dy*L*shoulder-py*W*.42];
+
+ return `M ${a1[0]} ${a1[1]} Q ${c1[0]} ${c1[1]} ${b1[0]} ${b1[1]} L ${b2[0]} ${b2[1]} Q ${c2[0]} ${c2[1]} ${a2[0]} ${a2[1]} Z`;
+}
+function textureMask(letter,plan,s,uid){
+ if(s.texture<=.001)return "";
+ const r=prng(plan.seed^0x9E3779B9);
+ const n=Math.round(10+s.texture*55);
+ let cuts="";
+ for(let i=0;i<n;i++){
+   const x=8+r()*84,y=8+r()*84;
+   const rr=.25+r()*(.45+s.texture*1.15);
+   const op=.35+r()*.65;
+   cuts+=`<ellipse cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" rx="${(rr*(.6+r()*.9)).toFixed(2)}" ry="${rr.toFixed(2)}" fill="black" opacity="${op.toFixed(2)}" transform="rotate(${Math.round(r()*180)} ${x.toFixed(2)} ${y.toFixed(2)})"/>`;
+ }
+ const scratches=Math.round(s.texture*10);
+ for(let i=0;i<scratches;i++){
+   const x=10+r()*80,y=10+r()*80,l=2+r()*8,a=r()*Math.PI*2;
+   const x2=x+Math.cos(a)*l,y2=y+Math.sin(a)*l;
+   cuts+=`<path d="M ${x.toFixed(2)} ${y.toFixed(2)} L ${x2.toFixed(2)} ${y2.toFixed(2)}" stroke="black" stroke-width="${(.25+r()*.7).toFixed(2)}" opacity="${(.3+r()*.6).toFixed(2)}"/>`;
+ }
+ return `<defs><mask id="${uid}"><rect width="100" height="100" fill="white"/>${cuts}</mask></defs>`;
+}
+let renderSerial=0;
+function svgFor(letter,s,slot){
+ const plan=letterPlan(letter);
+ const uid=`mask-${letter}-${renderSerial}-${slot}`;
+ const rr=prng(plan.seed^0x51ED270B);
+ let shapes="";
+ for(let i=0;i<s.strokes;i++){
+   shapes+=`<path d="${wedgePath(plan.marks[i],s,rr)}" fill="#efece3"/>`;
+   if(plan.marks[i].notch>.82){
+     const [x,y]=base[plan.marks[i].anchor];
+     const size=s.width*.18;
+     shapes+=`<circle cx="${x}" cy="${y}" r="${size.toFixed(2)}" fill="#efece3"/>`;
    }
  }
- return {seed,d};
+ let grid="";
+ if(s.showGrid){
+   grid=`<g fill="none" stroke="#5e5d57" stroke-width=".55" opacity=".7">
+     <path d="M22 22H78M22 50H78M22 78H78M22 22V78M50 22V78M78 22V78"/>
+     ${base.map(([x,y])=>`<circle cx="${x}" cy="${y}" r="1.8"/>`).join("")}
+   </g>`;
+ }
+ const mask=textureMask(letter,plan,s,uid);
+ return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${mask}${grid}<g ${s.texture>.001?`mask="url(#${uid})"`:""}>${shapes}</g></svg>`;
 }
-function svgFor(letter){
- const state=S(),g=glyph(letter,state);
- return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="${g.d}" fill="none" stroke="#f1efe8" stroke-width="${state.weight}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function normalizeLetter(){
+ let L=(letter.value||"A").toUpperCase().replace(/[^A-Z]/g,"")[0]||"A";
+ letter.value=L;return L;
+}
+function updateLabels(){
+ strokesV.textContent=strokes.value;
+ lengthV.textContent=length.value;
+ widthV.textContent=width.value;
+ wedgeV.textContent=wedge.value+"%";
+ textureV.textContent=texture.value+"%";
 }
 function render(){
- const current=(document.getElementById("letter").value||"A").toUpperCase().replace(/[^A-Z]/g,"")[0]||"A";
- document.getElementById("letter").value=current;
- document.getElementById("big").innerHTML=svgFor(current);
- const grid=document.getElementById("grid");grid.innerHTML="";
- for(const L of letters){
-   const g=glyph(L,S());
-   const card=document.createElement("div");card.className="card";
-   card.innerHTML=`<div class="glyph">${svgFor(L)}</div><div class="cap"><b>${L}</b><span class="seed">${g.seed}</span></div>`;
-   card.onclick=()=>{document.getElementById("letter").value=L;render()};
-   grid.appendChild(card);
- }
+ renderSerial++;
+ updateLabels();
+ const s=state(),current=normalizeLetter();
+ big.innerHTML=svgFor(current,s,"big");
+ grid.innerHTML="";
+ alphabet.forEach((L,i)=>{
+   const plan=letterPlan(L);
+   const el=document.createElement("div");
+   el.className="card"+(L===current?" active":"");
+   el.innerHTML=`<div class="glyph">${svgFor(L,s,i)}</div><div class="cap"><span class="letter">${L}</span><span class="seed">${plan.seed}</span></div>`;
+   el.onclick=()=>{letter.value=L;render()};
+   grid.appendChild(el);
+ });
 }
-["letter","complexity","curvature","jitter","weight"].forEach(id=>document.getElementById(id).addEventListener("input",render));
-document.getElementById("reset").onclick=()=>{complexity.value=5;curvature.value=42;jitter.value=7;weight.value=3;render()};
+letter.addEventListener("input",render);
+ids.forEach(id=>document.getElementById(id).addEventListener("input",render));
+showGrid.addEventListener("change",render);
+reset.onclick=()=>{
+ strokes.value=5;length.value=47;width.value=10;wedge.value=82;texture.value=38;showGrid.checked=false;render();
+};
 render();
 </script>
 </body>
