@@ -31,7 +31,6 @@ const OBJECTS = [
   { name: "brain", scene: 0 },
   { name: "neuron", scene: 1 },
   { name: "chrome", scene: 2 },
-  { name: "fire", scene: 3 },
 ];
 
 // The page animates, so every shot has to be taken at the same pose. Freezing the
@@ -58,10 +57,9 @@ async function pose(page, over) {
     // cube rig turns build steps off and the warp down, and the next case along
     // then quietly compares a different object with the baseline.
     s.lcOn = [1, 1, 1, 1, 1, 0]; s.warpOn = [1, 0, 0]; s.warpAmt = 0.74;
+    s.lcOct = 2; s.warpOct = 1;    // the counts the page has always had
     s.eps = 12.00; s.omega = 1.30; s.bound = 2; s.boundPad = 0.05;
     s.lcRelief = 0.26; s.lcFreq = 4.00; s.lcThick = 0.022; s.lcTwirl = 1.90;
-    s.fireHeight = 1.90; s.fireTurb = 1.00; s.fireRise = 1.00;
-    s.fireSmoke = 0.35; s.fireWindAz = 0.00; s.fireWindAmt = 0.00;
     // The film grain has a control now and it is off by default. The stored
     // baselines were taken before it existed, so the pose turns it back on:
     // that keeps "the sun switched off is the page as it was" a live claim
@@ -496,97 +494,6 @@ const run = async () => {
     say(!ballC.equals(await shot(page, "ball-brain")),
         "each object arrives at a ball of its own size");
 
-    // ---- the fire ------------------------------------------------------
-    // Everything else here is a surface the march hits. The flame is not: it
-    // is emission gathered along the ray on the way in, so the checks are
-    // about what reaches the frame rather than about where a surface is.
-    const burn = { scene: 3, shadowOn: 0, warpOn: [0, 0, 0], warpAmt: 0 };
-    // A pixel counts as alight when it is well clear of the background, which
-    // is a cold blue: the flame is the only warm thing in the frame, so red
-    // minus blue separates it from the haze without a threshold to tune.
-    const ALIGHT = 26;
-    const warm = (d, i) => d.data[i] - d.data[i + 2];
-    const upper = (png) => {                    // and how much of it up top
-      const d = decode(png), rows = Math.floor(d.h * 0.42), stride = d.w * d.bpp;
-      let n = 0;
-      for (let y = 0; y < rows; y++)
-        for (let x = 0; x < d.w; x++) if (warm(d, y * stride + x * d.bpp) > ALIGHT) n++;
-      return n / (d.w * rows);
-    };
-    // Against a night sky soot is not darker than what it covers — it is
-    // lighter, and it is warm, so neither brightness nor warmth alone can tell
-    // a flame from the smoke that replaced it. What separates them is colour
-    // per unit of light: a flame is strongly warm for how bright it is, and
-    // soot is nearly neutral.
-    // where in the frame two shots differ, band by band
-    const bandDiff = (a, b, top) => {
-      const A = decode(a), B = decode(b), stride = A.w * A.bpp;
-      const y0 = top ? 0 : Math.floor(A.h * 0.58);
-      const y1 = top ? Math.floor(A.h * 0.42) : A.h;
-      let sum = 0, n = 0;
-      for (let y = y0; y < y1; y++)
-        for (let x = 0; x < A.w; x++) {
-          const i = y * stride + x * A.bpp;
-          sum += Math.abs(A.data[i] - B.data[i]); n++;
-        }
-      return sum / Math.max(n, 1);
-    };
-    // lit pixels on one half of the frame, to see which way the plume leans
-    const sideLit = (png, right) => {
-      const d = decode(png), stride = d.w * d.bpp;
-      let n = 0;
-      for (let y = 0; y < d.h; y++) {
-        const x0 = right ? Math.floor(d.w / 2) : 0, x1 = right ? d.w : Math.floor(d.w / 2);
-        for (let x = x0; x < x1; x++) if (warm(d, y * stride + x * d.bpp) > ALIGHT) n++;
-      }
-      return n;
-    };
-    const lean = (png) => sideLit(png, true) - sideLit(png, false);
-
-    await pose(page, { ...burn, mClock: 40 });
-    const f0 = await shot(page, "fire-a");
-    await pose(page, { ...burn, mClock: 41.4 });
-    const f1 = await shot(page, "fire-b");
-    say(!f0.equals(f1), "the flame moves as the field's clock runs");
-    await pose(page, { ...burn, mClock: 40, morph: 0 });
-    say((await shot(page, "fire-still")).equals(f0), "and stands exactly still when the clock does");
-
-    await pose(page, { ...burn, mClock: 40, fireTurb: 0 });
-    const smooth = await shot(page, "fire-calm");
-    say(!smooth.equals(f0), "turbulence at nothing leaves a smooth ball in a smooth glow");
-
-    await pose(page, { ...burn, mClock: 40, fireHeight: 0.62 });
-    const shortF = await shot(page, "fire-short");
-    const tallUp = upper(f0), shortUp = upper(shortF);
-    say(tallUp > shortUp + 0.005,
-        `and a taller flame reaches further up the frame (${(shortUp * 100).toFixed(1)}% -> ${(tallUp * 100).toFixed(1)}%)`);
-
-    // the wind leans it, and leans it downwind rather than into the wind
-    await pose(page, { ...burn, mClock: 40, fireWindAz: Math.PI / 2, fireWindAmt: 1.2 });
-    const blown = await shot(page, "fire-wind");
-    say(!blown.equals(f0), "a wind bends the plume");
-    await pose(page, { ...burn, mClock: 40, fireWindAz: -Math.PI / 2, fireWindAmt: 1.2 });
-    const other = await shot(page, "fire-wind-back");
-    // which way is left on screen depends on where the camera is standing, so
-    // the claim is that opposite winds lean it opposite ways
-    const dA = lean(blown) - lean(f0), dB = lean(other) - lean(f0);
-    say(dA * dB < 0 && Math.abs(dA) > 200 && Math.abs(dB) > 200,
-        `and turning the wind about leans it the other way (${dA} / ${dB})`);
-
-    // soot both dims the flame and blocks what is behind it
-    await pose(page, { ...burn, mClock: 40, fireSmoke: 0 });
-    const clean = await shot(page, "fire-clear");
-    await pose(page, { ...burn, mClock: 40, fireSmoke: 1 });
-    const sooty = await shot(page, "fire-smoke");
-    // Soot swallows far more than it emits, so where the flame was thin
-    // tongues with sky between them it becomes one solid mass.
-    const upClean = upper(clean), upSooty = upper(sooty);
-    say(upSooty > upClean * 1.05,
-        `smoke closes the top of the plume up into one mass (${(upClean * 100).toFixed(1)}% -> ${(upSooty * 100).toFixed(1)}%)`);
-    const dTop = bandDiff(clean, sooty, true), dBot = bandDiff(clean, sooty, false);
-    say(dTop > dBot * 1.5,
-        `and it is the top it acts on, not the fire at the bottom (${dTop.toFixed(1)} vs ${dBot.toFixed(1)})`);
-
     // Walking: put the camera in the air over the chrome and let go of it. The
     // ground it lands on comes back from the shader, one ray at a time.
     // The two slabs are unioned rather than intersected for this one: the
@@ -723,6 +630,58 @@ const run = async () => {
     say(tick.e > tick.d, "and P again lets it go");
     say(tick.held === tick.d.toFixed(2) + " s" && tick.reads === tick.e.toFixed(2) + " s",
         `and the console shows the clock, held and running (${tick.held} / ${tick.reads})`);
+
+    // ---- octaves --------------------------------------------------------
+    // The relief has always been two layers of noise and the warp one. Making
+    // that a number has to leave those two counts drawing exactly what they
+    // drew, or every baseline in this file is a baseline for something else.
+    await pose(page, { ...flat, lcOct: 2, warpOct: 1 });
+    if (off) say((await shot(page, "oct-as-was")).equals(off),
+                 "two octaves of relief and one of warp is the page as it was");
+
+    await pose(page, { ...flat, lcOct: 4 });
+    const deep = await shot(page, "oct-relief-4");
+    say(off && !deep.equals(off), "more octaves of relief put finer detail on the landscape");
+    await pose(page, { ...flat, lcOct: 1 });
+    const flatr = await shot(page, "oct-relief-1");
+    say(!flatr.equals(deep), "and one octave is smoother again");
+
+    // Adding octaves must add detail and not height: normalised back to what
+    // the old two summed to, so the silhouette stays where Relief put it.
+    const bulk = (png) => {
+      const d = decode(png);
+      let n = 0, total = 0;
+      for (let i = 0; i + 2 < d.data.length; i += d.bpp) {
+        total++;
+        if (0.299 * d.data[i] + 0.587 * d.data[i + 1] + 0.114 * d.data[i + 2] > 60) n++;
+      }
+      return n / total;
+    };
+    const b1 = bulk(flatr), b4 = bulk(deep);
+    say(Math.abs(b1 - b4) < 0.05,
+        `and octaves add detail rather than size (${(b1 * 100).toFixed(1)}% vs ${(b4 * 100).toFixed(1)}% of the frame)`);
+
+    // The finer octaves are steeper, and a march not told so walks through the
+    // surface: holes read as background where the object plainly is.
+    await pose(page, { ...flat, scene: 1, warpOct: 1, warpAmt: 0.9 });
+    const w1 = await shot(page, "oct-warp-1");
+    await pose(page, { ...flat, scene: 1, warpOct: 4, warpAmt: 0.9 });
+    const w4 = await shot(page, "oct-warp-4");
+    say(!w1.equals(w4), "more octaves of warp crease the object more finely");
+    const solid = (png) => {
+      const d = decode(png), stride = d.w * d.bpp;
+      let n = 0, total = 0;
+      const y0 = Math.floor(d.h * 0.35), y1 = Math.floor(d.h * 0.65);
+      const x0 = Math.floor(d.w * 0.35), x1 = Math.floor(d.w * 0.65);
+      for (let y = y0; y < y1; y++)
+        for (let x = x0; x < x1; x++) {
+          const i = y * stride + x * d.bpp; total++;
+          if (0.299 * d.data[i] + 0.587 * d.data[i + 1] + 0.114 * d.data[i + 2] > 45) n++;
+        }
+      return n / total;
+    };
+    say(solid(w4) > solid(w1) * 0.85,
+        `and the march still finds the surface it carved (${(solid(w1) * 100).toFixed(1)}% -> ${(solid(w4) * 100).toFixed(1)}% solid)`);
 
     // The mirror. Off is the page as it was; on, the object is folded in half
     // about the plane and the half that is left is drawn on both sides.

@@ -33,8 +33,7 @@ Exactly one is shown at a time.
 | --- | --- |
 | **Brain** | A lattice of somata and neurites inside a brain-shaped shell. Cell density is adjustable. |
 | **Neuron** | One cell: soma, five dendrites with a fork on each, and an axon, built from Bézier tubes. Line width is adjustable. |
-| **Chrome** (LiquidChrome) | A 20x20x0.5 slab, displaced by two octaves of Perlin into a landscape, intersected with an undeformed copy of itself, then twirled. Each of the five construction steps can be switched off on its own. A sixth switch, off by default, hangs a plain cube over the slab. |
-| **Fire** | A burning body: a ball of dark crust with glowing cracks, wrapped in a corona of flame and drawn up into a plume. The only one of the four that is not entirely a surface — see §34. |
+| **Chrome** (LiquidChrome) | A 20x20x0.5 slab, displaced by Perlin into a landscape (two octaves of it, or as many as §34 asks for), intersected with an undeformed copy of itself, then twirled. Each of the five construction steps can be switched off on its own. A sixth switch, off by default, hangs a plain cube over the slab. |
 
 Each object keeps its own two colours (structure and accent).
 
@@ -110,7 +109,7 @@ colour, which is what makes the left column scannable.
 | --- | --- |
 | **Construction** | Object, Navigation, Flight path |
 | **Camera** | how slow and how fast flight goes, and how much it lags the hand (§3); walking, jumping and step sounds (§30); the lens and depth of field (§31) |
-| **Object modifications** | the chrome build steps and their sliders, the fire's six (§34), **Blend to sphere**, **Seed** (§32), **Time** (§8), ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
+| **Object modifications** | the chrome build steps and their sliders, **Blend to sphere**, **Seed** (§32), **Time** (§8), ray steps, surface precision, step relaxation, bounds and padding, cell density, domain warp, noise warp mode, warp strength and scale, line width, spike rate, colours, and Flight / Morph / Impulses |
 | **Rendering** | Resolution, Antialias, Frame rate |
 | **Shadows** | the Shadows switch, where the sun stands, and how its shadows fall. See §15 |
 | **Material** | MatCap and its sphere, the normal map and its. See §16 and §20 |
@@ -152,6 +151,8 @@ console window (§33) reaches exactly to whatever that width leaves.
 | Step relaxation | 1.00–1.90 | 1.30 |
 | Bounds | Sphere, Box, Auto | Auto |
 | Bound padding | 0–0.60 | 0.05 |
+| Warp octaves | 1–4 | 1 |
+| Relief octaves (chrome) | 1–4 | 2 |
 
 - **Auto** hands the render scale to a frame-time controller. **Half** and
   **Native** pin it. **FHD** renders exactly 1920x1080 whatever size the window
@@ -1277,71 +1278,40 @@ last 400 lines.
 
 ---
 
-## 34. Fire
+## 34. Octaves
 
-The fourth object, and the only one that is not entirely a surface.
+Two controls, one number each: how many layers of noise a thing is built from.
 
-**The body** is a ball with a crust: the same noise the flames are made of,
-eating into its surface. It is a real distance field, so the march hits it and
-everything else in this page works on it without knowing it is on fire —
-shadows, the matcap, normal maps, transparency, the mirror, the depth decal,
-the blend to a sphere, and walking. Where the crust's ridges are, it is dark and
-reflects almost nothing; in the cracks between them it **emits**. That is the
-whole difference between a hot thing and a brightly lit one, and it is the only
-place in this page where a surface gives off light of its own.
+| Control | Where | Range | Default |
+| --- | --- | --- | --- |
+| **Warp octaves** | every object | 1–4 | 1 |
+| **Relief octaves** | chrome only | 1–4 | 2 |
 
-**The flame** has no surface and there is nothing to hit. It is emission
-gathered along the ray at the steps the march is already taking, front to back,
-so what is nearest hides what is behind it. It costs no second loop.
+Each layer is **half the amplitude and 2.03 times the rate** of the one before
+it, offset so the layers do not line up and — for the relief, which drifts —
+climbing a little faster in time.
 
-Two shapes make it, whichever is the stronger at a point: a corona hugging the
-body all round, and a column drawn up out of the top of that corona, tapering
-as it climbs. Three octaves of noise then **cut** that envelope into tongues
-rather than shading it, sampled at a point pushed back down by the field's own
-clock — so a flame rises out of a field that is itself standing still — and
-squashed vertically, because a flame is taller than it is wide.
+**More octaves is more detail and never more size.** The sum is normalised back
+to what the shipped count summed to, so the height **Relief** asks for and the
+strength **Warp strength** asks for are the height and the strength you get at
+any octave count. Only the fineness changes.
 
-| Control | Range | Default |
-| --- | --- | --- |
-| **Flame height** | 0.10–4.00, or typed | 1.90 |
-| **Turbulence** | 0–3.00 | 1.00 |
-| **Rise** | 0–4.00 | 1.00 |
-| **Smoke** | 0–1.00 | 0.35 |
-| **Wind direction** | 0–360° | 0° |
-| **Wind strength** | 0–2.00 | 0.00 |
+**The shipped counts are exact.** Relief at 2 and warp at 1 draw what the page
+has always drawn, to the byte — which is what every stored baseline in
+`tools/shadows.mjs` and the native port's parity depend on. That is not free to
+arrange: the first two relief terms are written out literally rather than
+generated by a loop, because `0.06 + 0.03` is not the float `0.09` and a loop
+that computed the same arguments would not compute the same numbers. For the
+same reason the relief's Lipschitz scaling is skipped outright at two octaves
+instead of being multiplied by a factor that is only nearly one.
 
-**Turbulence** does two jobs at once, because they are one field: it cuts the
-plume into tongues and it eats the crust into the body. At **nothing** the body
-is a smooth ball inside a smooth glow.
+**The march has to be told.** A finer octave is a steeper one, and the step size
+is derived from an upper bound on the field's slope: leave that bound at its
+one-octave value and the march walks straight through the creases the extra
+octaves just carved, which shows up as holes in the object. So both the warp's
+`lip` and the chrome's `sceneLip()` scale with the octaves' combined slope over
+their combined amplitude.
 
-**Rise** runs on the field's clock, so **Play** (§8) stops the flame dead and a
-template comes back to the same moment of it.
-
-**Smoke** takes the top of the plume to soot. Fire is nearly all emission and
-hardly any of it absorbs; soot is the other way about, so where the flame was
-separate tongues with sky between them it closes up into one solid mass that
-hides its own far side. Against a night sky that mass reads lighter than what
-it covers, not darker — smoke is only black against something brighter.
-
-**The wind** leans the plume, sheared sideways by however far it has climbed,
-and it is measured the same way round as the sun's.
-
-Three things had to be paid for, and each one is a trap this project has fallen
-into before:
-
-- **A volume has to be sampled, not skipped.** A sphere trace crosses the plume
-  in three or four enormous strides and would draw it as three or four shells.
-  Inside the flame's reach the step is cut to something that can see it —
-  **through `lip`, and never through the distance**. Clamping the distance would
-  shorten the step too, but it would also tell the volumetric glow that a
-  surface is near, and hang a bright ghost of the plume in the empty air.
-- **The glow is summed once per march step**, so shortening the step gathers
-  more of it over the same distance. Inside the plume the glow is not gathered
-  at all: there is nothing to gather, because in there the flame *is* the light.
-  Without that, the whole object drowns in milk.
-- **The bounding volume has to hold the plume.** Anything outside it is never
-  marched, so the bound grows with the flame height — or the fire comes out
-  sliced flat at the top.
-
-Fire is the most expensive of the four objects, because it is the only one that
-makes the march take small steps through empty space.
+**It is not free.** Each octave is another noise lookup at every march step —
+eight hash evaluations — and the shorter steps its steepness forces cost more
+again. Four octaves of warp is a noticeably heavier frame than one.

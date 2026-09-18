@@ -202,6 +202,8 @@ const renderPair = async ([webSrc, portSrc, u, W, H]) => {
       set("uMirror", "uniform2f", 0.0, 0.0);   // the port has no mirror; unfolded is zero
       set("uBall", "uniform1f", 0.0);          // nor the blend to a ball; none of it is zero
       set("uDofOn", "uniform1f", 0.0);         // nor a lens; everything is in focus
+      set("uLcOct", "uniform1f", 2.0);         // the port has the two octaves of relief
+      set("uWarpOct", "uniform1f", 1.0);       // and the one of warp, hard-coded
       set("uSeedOff", "uniform3f", 0.0, 0.0, 0.0);  // nor a seed; zero is the roll it ports
       set("uBoundPad", "uniform1f", u.boundPad);
       set("uWarpMode", "uniform1f", u.warpMode);
