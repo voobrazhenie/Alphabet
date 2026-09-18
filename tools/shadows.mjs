@@ -1487,7 +1487,10 @@ const spin = await ui.evaluate(() => {
     await old.addInitScript(() => {
       localStorage.setItem("cortical.defaults.v2", JSON.stringify({
         at: Date.now(),
-        data: { scene: 1, fly: 1, shadowDark: 0.11, flyPos: [0, 0, 3], flyYaw: 0, flyPitch: 0 },
+        data: { scene: 1, fly: 1, shadowDark: 0.11, flyPos: [0, 0, 3], flyYaw: 0, flyPitch: 0,
+                // which picture each slot wanted, by name: one that is here
+                // under a different number, and one that is not here at all
+                matcap: 0, imgRef: { matcap: "Normals", normalMc: "Nowhere At All" } },
       }));
     });
     await old.goto(page_url);
@@ -1503,6 +1506,17 @@ const spin = await ui.evaluate(() => {
     say(!back.walkOn, "and comes back flying rather than walking");
     say(back.size === 1 && back.seed === 0 && !back.dof,
         "with everything it never mentioned as the page ships it");
+
+    // A picture is remembered by name, because the number is a position in one
+    // browser's own list and means something else in another browser's.
+    const pics = await old.evaluate(() => ({
+      matcap: window.__state.matcap,
+      log: document.getElementById("termLog").textContent,
+    }));
+    say(pics.matcap === 1,
+        `a picture is found again by name, not by number (slot now ${pics.matcap})`);
+    say(/Not on this machine: Nowhere At All/.test(pics.log),
+        "and one that is not on this machine is said, not silently swapped");
     await old.close();
   }
 

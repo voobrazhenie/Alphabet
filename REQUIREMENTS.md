@@ -33,7 +33,7 @@ Exactly one is shown at a time.
 | --- | --- |
 | **Brain** | A lattice of somata and neurites inside a brain-shaped shell. Cell density is adjustable. |
 | **Neuron** | One cell: soma, five dendrites with a fork on each, and an axon, built from Bézier tubes. Line width is adjustable. |
-| **Chrome** (LiquidChrome) | A 20x20x0.5 slab, displaced by Perlin into a landscape (two octaves of it, or as many as §34 asks for), intersected with an undeformed copy of itself, then twirled. Each of the five construction steps can be switched off on its own. A sixth switch, off by default, hangs a plain cube over the slab. |
+| **Chrome** (LiquidChrome) | A 20x20x0.5 slab, displaced by Perlin into a landscape (two octaves of it, or as many as §35 asks for), intersected with an undeformed copy of itself, then twirled. Each of the five construction steps can be switched off on its own. A sixth switch, off by default, hangs a plain cube over the slab. |
 
 Each object keeps its own two colours (structure and accent).
 
@@ -232,6 +232,20 @@ the same defaults then follow the page to any computer. The whole cloud path
 fails soft: no network, no permission, no cloud, and the page carries on with
 the local copy. The web API key is public by design; the Firestore rules are
 what protect the data.
+
+**Templates sync the same way but in both directions** (§23). On load the page
+reads the `templates` collection and settles three things at once: what the
+cloud has and this browser does not comes down; what both have, where the
+cloud's copy was touched later, comes down over the local one; and what this
+browser has and the cloud does not goes up. Every template carries the moment
+it was last touched, which is the only thing that can tell two copies apart.
+The third case is what hands over a browser that has been keeping templates to
+itself — the first time it is allowed to, they all go up.
+
+**That needs the rules to allow `list`, not only `get`.** A single named
+document like `settings/default` is a `get`; reading a whole collection is a
+`list`, and a rule that grants one does not grant the other. Until the rules
+say so, templates are written to the cloud and can never be read back.
 
 ## 10. Statistics panel
 
@@ -1278,7 +1292,26 @@ last 400 lines.
 
 ---
 
-## 34. Octaves
+## 34. Pictures travel by name
+
+Every image slot — the MatCap sphere, the shadow sphere, the normal map, the
+depth-map card and the overlay sprite — is stored as a **position** in this
+browser's own list of images. That list is the built-in ones plus whatever this
+browser has loaded, so the same number on another machine is a different
+picture, or no picture at all.
+
+So a saved setting and a template also write down **what each slot was pointing
+at, by name**. On arrival the page finds it again by name: if the picture is
+here under a different number, the slot is corrected; if it is not here at all,
+the page **says so** rather than quietly wearing the wrong one.
+
+The images themselves do not travel. They are kept in the cloud under
+`matcaps/{id}` and are subject to the same `list` restriction as the templates
+(§9), so an image loaded on one machine stays on it.
+
+---
+
+## 35. Octaves
 
 Two controls, one number each: how many layers of noise a thing is built from.
 
